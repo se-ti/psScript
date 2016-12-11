@@ -1,4 +1,4 @@
-﻿/*
+﻿/* 
 <javascriptresource>
 	<name>Generate report images</name>
 	<type>automate</type>
@@ -13,11 +13,12 @@
 #script "Preview builder"
 
 // $.level = 2;
-$.locale = 'ru';
+// $.locale = 'ru';
 $.localize = true; // автолокализация
 
 /* todo
 * автоматически подтягивать единственный txt файл в папке
+* проверять наличие файлика с описаниями
 * filenames with spaces -- это надо менять формат файла
 * высота больших?
 * +- ввод путей руками
@@ -27,7 +28,7 @@ $.localize = true; // автолокализация
 *
 * ++ localization
 * ++ font -- выбирать Calibri по умолчанию
-* +- font setup,
+* +- font setup, ?? а что не так?
 * ++ text font size
 * ++ нулевой размер запрещает ресайз или добавление текста
 */
@@ -79,7 +80,12 @@ CDialog.prototype = {
 		this._lastPath = this.srcFolder ? (this.srcFolder instanceof Folder ? this.srcFolder.fullName : this.srcFolder.path) : null;
 	},
 
-	_onSrcFolderChanged: function() {
+    _setPathText: function (ctrl, file) {
+        ctrl.text = file ? file.fsName : '';
+        ctrl.bounds.bottom = ctrl.bounds.top + 19;
+    },
+
+    _onSrcFolderChanged: function() {
         var path = this.dlg.path.text || '';
         var f = Folder(path);
         this.dlg.recursive.enabled = f.exists;
@@ -96,32 +102,38 @@ CDialog.prototype = {
 		this.dlg.btnPnl.buildBtn.enabled = this.srcFolder != null && (this.dlg.main.value || this.dlg.preview.value);
 	},
 
-	mainChange: function(e) {
-		var dlg = this.dlg;
-		var val = dlg.main.value;
+	_canAddText: function () {
+		var c = this.dlg;
+		var val = c.main.value && ((c.desc.text || '') != '');
+		c.textHeight.enabled = val;
+		c.font.enabled = val;
+	},
 
-		dlg.refDim.enabled = val;
-		dlg.qual.enabled = val && dlg.psd.selection.index != 1;
-		dlg.suffix.enabled = val;
-		dlg.psd.enabled = val;
-		dlg.font.enabled = val;
-		dlg.textHeight.enabled = val;
+	_onMainChange: function(e) {
+		var c = this.dlg;
+		var val = c.main.value;
+
+		c.refDim.enabled = val;
+		c.qual.enabled = val && c.psd.selection.index != 1;
+		c.suffix.enabled = val;
+		c.psd.enabled = val;
+		this._canAddText();
 
 		this._canStart();
 	},
 
-	previewChange: function (e) {
-		var dlg = this.dlg;
-		var val = dlg.preview.value;
+	_onPreviewChange: function (e) {
+		var c = this.dlg;
+		var val = c.preview.value;
 
-		dlg.prevRefDim.enabled = val;
-		dlg.prevQual.enabled = val;
-		dlg.prevSuffix.enabled = val;
+		c.prevRefDim.enabled = val;
+		c.prevQual.enabled = val;
+		c.prevSuffix.enabled = val;
 
 		this._canStart();
 	},
 
-	psdChange: function (e) {
+	_onPsdChange: function (e) {
 		this.dlg.qual.enabled = this.dlg.main.value && this.dlg.psd.selection.index != 1;
 	},
 
@@ -140,20 +152,20 @@ CDialog.prototype = {
 	},
 
 	start: function() {
-		var dlg = this.dlg;
+		var c = this.dlg;
 		app.breakProcess = false;
 
-		var qual = this._limit(dlg.qual, 100, 0, 100);
-		var dim = this._limit(dlg.refDim, 1000, 0, null);
-		var param = dlg.main.value ? new CParam(dim, Math.round(qual * 12 / 100), dlg.suffix.text || '', CParam.prototype.ResizeMode.minSide) : null;
+		var qual = this._limit(c.qual, 100, 0, 100);
+		var dim = this._limit(c.refDim, 1000, 0, null);
+		var param = c.main.value ? new CParam(dim, Math.round(qual * 12 / 100), c.suffix.text || '', CParam.prototype.ResizeMode.minSide) : null;
 
-		qual = this._limit(dlg.prevQual, 75, 0, 100);
-		dim = this._limit(dlg.prevRefDim, 200, 0, null);
-		var prevParam = dlg.preview.value ? new CParam(dim, qual, dlg.prevSuffix.text || '', CParam.prototype.ResizeMode.refSize) : null;
+		qual = this._limit(c.prevQual, 75, 0, 100);
+		dim = this._limit(c.prevRefDim, 200, 0, null);
+		var prevParam = c.preview.value ? new CParam(dim, qual, c.prevSuffix.text || '', CParam.prototype.ResizeMode.refSize) : null;
 
-		if (dlg.font.selection != null) {
-			param.font = app.fonts[dlg.font.selection.index]; //.getByName(dlg.font.selection.text);
-			param.textHeight = this._limit(dlg.textHeight, 18, 0, 96);
+		if (c.font.selection != null) {
+			param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
+			param.textHeight = this._limit(c.textHeight, 18, 0, 96);
 		}
 
 		var logArr = [];
@@ -169,10 +181,10 @@ CDialog.prototype = {
 
 		app.backgroundColor = bkCol;
 
-		this.processFolder(this.srcFolder, dlg.recursive.value, param, prevParam, logArr, dlg.psd.selection.index == 1, dlg.desc.text);
+		this.processFolder(this.srcFolder, c.recursive.value, param, prevParam, logArr, c.psd.selection.index == 1, c.desc.text);
 
-		if (dlg.logFile)
-			this.writeLog(dlg.logFile, logArr);
+		if (c.logFile)
+			this.writeLog(c.logFile, logArr);
 
 		app.preferences.rulerUnits = originalUnit;
 		app.preferences.typeUnits = orgTypeUnit;
@@ -346,11 +358,6 @@ CDialog.prototype = {
 		}
 	},
 
-	_setPathText: function (ctrl, file) {
-		ctrl.text = file ? file.fsName : '';
-		ctrl.bounds.bottom = ctrl.bounds.top + 19;
-	},
-
 	_initGUI: function() {
 		var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3');
 		this.dlg = dlg;
@@ -377,6 +384,7 @@ CDialog.prototype = {
 		this._adjustStatic(dlg.trow1.add('StaticText', undefined, {en: 'Descriptions:', ru: 'Описания:'}));
 		dlg.desc = dlg.trow1.add('EditText', undefined, 'photo.txt');
 		dlg.desc.characters = 15;
+		dlg.desc.onChange = $cd(this, this._canAddText);
 
 		// dst folder
 
@@ -407,7 +415,7 @@ CDialog.prototype = {
 		dlg.main = dlg.col1.add('checkbox', undefined, {en: 'Generate main', ru: 'Создать основные'});
 		dlg.main.align = 'left';
 		dlg.main.value = true;
-		dlg.main.onClick = $cd(this, this.mainChange);
+		dlg.main.onClick = $cd(this, this._onMainChange);
 
 		dlg.TransformPnl = dlg.col1.add('panel', undefined, '');
 		dlg.TransformPnl.alignChildren = 'left';
@@ -435,7 +443,7 @@ CDialog.prototype = {
 		this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
 		dlg.psd = dlg.row3.add('dropdownlist', undefined, ['JPEG', 'PSD']);
 		dlg.psd.selection = 0;
-		dlg.psd.onChange = $cd(this, this.psdChange);
+		dlg.psd.onChange = $cd(this, this._onPsdChange);
 
 		dlg.row4_ = dlg.TransformPnl.add('group');
 		this._adjustStatic(dlg.row4_.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
@@ -450,7 +458,7 @@ CDialog.prototype = {
 		for (var i = 0; i < app.fonts.length; i++)
 		{
 			var name = app.fonts[i].name;
-			if (name == 'Century Gothic' || selIndex == null && name == 'Calibri')
+			if (selIndex == null && name == 'Calibri' || name == 'Century Gothic')
                 selIndex = i;
 
             dlg.font.add('item', app.fonts[i].name);
@@ -464,7 +472,7 @@ CDialog.prototype = {
 
 		dlg.preview = dlg.col2.add('checkbox', undefined, {en: 'Generate preview', ru: 'Создать превью'});
 		dlg.preview.value = false;
-		dlg.preview.onClick = $cd(this, this.previewChange);
+		dlg.preview.onClick = $cd(this, this._onPreviewChange);
 
 		dlg.settPnl = dlg.col2.add('panel', undefined, '');
 		dlg.settPnl.alignChildren = 'left';
@@ -508,8 +516,8 @@ CDialog.prototype = {
 			dlg.close();
 		};
 
-		this.mainChange();
-		this.previewChange();
+		this._onMainChange();
+		this._onPreviewChange();
 		return dlg;
 	},
 
