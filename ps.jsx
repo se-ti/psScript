@@ -1,13 +1,10 @@
 ﻿/*
 <javascriptresource>
-	<name>Generate report images</name>
+	<name>Preview builder</name>
 	<type>automate</type>
-	<about>Generating resource images. by se-ti</about>
-	<enableinfo>true</enableinfo>
+	<about>Generating report images. Serge Titov https://github.com/se-ti/</about>
 </javascriptresource>
 */
-
-
 
 #target photoshop
 #script "Preview builder"
