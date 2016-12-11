@@ -1,28 +1,32 @@
 ﻿/*
 <javascriptresource>
-<name>Generate report images</name>
-<type>automate</type>
-<about>Generating resource images. by se-ti</about>
-<enableinfo>true</enableinfo>
+	<name>Generate report images</name>
+	<type>automate</type>
+	<about>Generating resource images. by se-ti</about>
+	<enableinfo>true</enableinfo>
 </javascriptresource>
 */
 
 
 
 #target photoshop
+#script "Preview builder"
 
 // $.level = 2;
+$.locale = 'ru';
+$.localize = true; // автолокализация
 
 /* todo
-* filenames with spaces -- это формат файла
+* автоматически подтягивать единственный txt файл в папке
+* filenames with spaces -- это надо менять формат файла
 * высота больших?
-*  -+ ввод путей руками
+* +- ввод путей руками
 * output folder
 * переделать layout на xml
-* запоминать настройки с прошлого запуска?
-* font -- выбирать Calibri по умолчанию
-* автоматически подтягивать единственный txt файл в папке
+* запоминать настройки с прошлого запуска?  try $.setenv / $.getenv
 *
+* ++ localization
+* ++ font -- выбирать Calibri по умолчанию
 * +- font setup,
 * ++ text font size
 * ++ нулевой размер запрещает ресайз или добавление текста
@@ -50,8 +54,8 @@ CDialog.prototype = {
 
 	chooseFile: function ()
 	{
-		var title = 'Choose file to save log';
-		var filter = ['HTML files:*.html;*.htm,All files:*.*'];
+		var title = {en: 'Choose file to save log', ru: 'Выберите файл для лога'};
+		var filter = {en: 'HTML files:*.html;*.htm,All files:*.*', ru:'HTML файлы:*.html;*.htm,Все файлы:*.*'};
 
 		var dlg = this.dlg;
 		if (dlg.logFile)
@@ -63,7 +67,8 @@ CDialog.prototype = {
 	},
 
 	chooseFolder: function() {
-		var title = "Choose folder to convert";
+		var title = {en: 'Choose folder to convert',
+			ru: 'Выберите папку с обрабатываемыми изображениями'};
 
 		this.srcFolder =  this._lastPath ? Folder(this._lastPath).selectDlg(title) : Folder.selectDialog(title);
 		this.dlg.recursive.enabled = this.srcFolder instanceof Folder;
@@ -72,6 +77,19 @@ CDialog.prototype = {
 		this._setPathText(this.dlg.path, this.srcFolder);
 
 		this._lastPath = this.srcFolder ? (this.srcFolder instanceof Folder ? this.srcFolder.fullName : this.srcFolder.path) : null;
+	},
+
+	_onSrcFolderChanged: function() {
+        var path = this.dlg.path.text || '';
+        var f = Folder(path);
+        this.dlg.recursive.enabled = f.exists;
+        this.srcFolder = f.exists ? f : null;
+        if (f.exists)
+            this._lastPath = this.srcFolder.fullName;
+        else if (path != '')
+            alert(localize({en: 'Path "%1" doesn\'t exist!', ru: 'Папка "%1" не существует'}, path));
+
+        this._canStart();
 	},
 
 	_canStart: function() {
@@ -323,7 +341,7 @@ CDialog.prototype = {
 
 	_adjustStatic: function (st) {
 		if (st) {
-			st.size = [86, 14];
+			st.size = [92, 14];
 			st.justify = 'right';
 		}
 	},
@@ -334,42 +352,29 @@ CDialog.prototype = {
 	},
 
 	_initGUI: function() {
-		var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.2.1');
+		var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3');
 		this.dlg = dlg;
 
 		dlg.alignChildren = 'fill';
 
 
-		dlg.ctrlPnl = dlg.add('panel', undefined, 'Source folder');
+		dlg.ctrlPnl = dlg.add('panel', undefined, {en: 'Source folder', ru: 'Папка с изображениями'});
 
 		dlg.ctrlPnl.alignChildren = 'left';
 		dlg.srcGrp = dlg.ctrlPnl.add('group');
-        dlg.browseBtn = dlg.srcGrp.add('button', undefined, 'Choose...');
 
 		dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});	// , {readonly: false, borderless: true}
 		dlg.path.characters = 40;
+		dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
 
-		var t = this;
-		dlg.path.onChange = function(e) {
-			var path = dlg.path.text || '';
-			var f = Folder(path);
-            dlg.recursive.enabled = f.exists;
-            t.srcFolder = f.exists ? f : null;
-			if (f.exists)
-                t._lastPath = dlg.srcFolder.fullName;
-			else if (path != '')
-				alert('Path "' + path + '" doesn\'t exist!');
-
-			t._canStart();
-		};
-
+        dlg.browseBtn = dlg.srcGrp.add('button', undefined, {en: 'Browse...', ru: 'Обзор...'});
 		dlg.browseBtn.onClick = $cd(this, this.chooseFolder);
 
-		dlg.recursive = dlg.ctrlPnl.add('checkbox', undefined, 'Include all subfolders');
+		dlg.recursive = dlg.ctrlPnl.add('checkbox', undefined, {en: 'Include all subfolders', ru: 'Включая все подпапки'});
 		dlg.recursive.value = false;
 
 		dlg.trow1 = dlg.ctrlPnl.add('group');
-		this._adjustStatic(dlg.trow1.add('StaticText', undefined, 'Descriptions:'));
+		this._adjustStatic(dlg.trow1.add('StaticText', undefined, {en: 'Descriptions:', ru: 'Описания:'}));
 		dlg.desc = dlg.trow1.add('EditText', undefined, 'photo.txt');
 		dlg.desc.characters = 15;
 
@@ -399,7 +404,7 @@ CDialog.prototype = {
 		dlg.col2.alignChildren = 'left';
 
 		/*******************************************************/
-		dlg.main = dlg.col1.add('checkbox', undefined, 'Generate main');
+		dlg.main = dlg.col1.add('checkbox', undefined, {en: 'Generate main', ru: 'Создать основные'});
 		dlg.main.align = 'left';
 		dlg.main.value = true;
 		dlg.main.onClick = $cd(this, this.mainChange);
@@ -409,48 +414,55 @@ CDialog.prototype = {
 		//dlg.TransformPnl.orientation = 'row';
 
 		dlg.row0 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row0.add('StaticText', undefined, 'Reference size:'));
+		this._adjustStatic(dlg.row0.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
 		dlg.refDim = dlg.row0.add('EditText', undefined, '1000');
 		dlg.refDim.characters = 6;
 		dlg.refDim.minvalue = 1;
 
 		dlg.row1 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row1.add('StaticText', undefined, 'Quality:'));
+		this._adjustStatic(dlg.row1.add('StaticText', undefined, {en: 'Quality:', ru: 'Качество: '}));
 		dlg.qual = dlg.row1.add('EditText', undefined, '100');
 		dlg.qual.characters = 6;
 		dlg.qual.minvalue = 1;
 		dlg.qual.maxvalue = 100;
 
 		dlg.row2 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row2.add('StaticText', undefined, 'Suffix:'));
+		this._adjustStatic(dlg.row2.add('StaticText', undefined, this._L.suffix));
 		dlg.suffix = dlg.row2.add('EditText', undefined, '_r');
 		dlg.suffix.characters = 6;
 
 		dlg.row3 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row3.add('StaticText', undefined, 'Save as:'));
+		this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
 		dlg.psd = dlg.row3.add('dropdownlist', undefined, ['JPEG', 'PSD']);
 		dlg.psd.selection = 0;
 		dlg.psd.onChange = $cd(this, this.psdChange);
 
 		dlg.row4_ = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row4_.add('StaticText', undefined, 'Font size:'));
+		this._adjustStatic(dlg.row4_.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
 		dlg.textHeight = dlg.row4_.add('EditText', undefined, '18');
 		dlg.textHeight.characters = 6;
 
 		dlg.row5_ = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row5_.add('StaticText', undefined, 'Font name:'));
+		this._adjustStatic(dlg.row5_.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
 		dlg.font = dlg.row5_.add('dropdownlist', undefined);
-		for (var i = 0; i < app.fonts.length; i++)
-			dlg.font.add('item', app.fonts[i].name);
 
-        dlg.font.selection = 1;
+		var  selIndex = null;
+		for (var i = 0; i < app.fonts.length; i++)
+		{
+			var name = app.fonts[i].name;
+			if (name == 'Century Gothic' || selIndex == null && name == 'Calibri')
+                selIndex = i;
+
+            dlg.font.add('item', app.fonts[i].name);
+        }
+        dlg.font.selection = selIndex || 0;
 
 		//var t = this;
         dlg.textHeight.onChange = function() {t.dlg.font.enabled = t._limit(t.dlg.textHeight, 4, 0, 96) > 0; };
 
 		/*******************************************************/
 
-		dlg.preview = dlg.col2.add('checkbox', undefined, 'Generate preview');
+		dlg.preview = dlg.col2.add('checkbox', undefined, {en: 'Generate preview', ru: 'Создать превью'});
 		dlg.preview.value = false;
 		dlg.preview.onClick = $cd(this, this.previewChange);
 
@@ -458,20 +470,20 @@ CDialog.prototype = {
 		dlg.settPnl.alignChildren = 'left';
 
 		dlg.row4 = dlg.settPnl.add('group');
-		this._adjustStatic(dlg.row4.add('StaticText', undefined, 'Reference size:'));
+		this._adjustStatic(dlg.row4.add('StaticText', undefined, this._L.size));
 		dlg.prevRefDim = dlg.row4.add('EditText', undefined, '200');
 		dlg.prevRefDim.characters = 6;
 		dlg.prevRefDim.minvalue = 1;
 
 		dlg.row5 = dlg.settPnl.add('group');
-		this._adjustStatic(dlg.row5.add('StaticText', undefined, 'JPEG quality:'));
+		this._adjustStatic(dlg.row5.add('StaticText', undefined, {en: 'JPEG quality:', ru: 'Качество:'}));
 		dlg.prevQual = dlg.row5.add('EditText', undefined, '75');
 		dlg.prevQual.characters = 6;
 		dlg.prevQual.minvalue = 1;
 		dlg.prevQual.maxvalue = 100;
 
 		dlg.row6 = dlg.settPnl.add('group');
-		this._adjustStatic(dlg.row6.add('StaticText', undefined, 'Suffix:'));
+		this._adjustStatic(dlg.row6.add('StaticText', undefined, this._L.suffix));
 		dlg.prevSuffix = dlg.row6.add('EditText', undefined, '_prev');
 		dlg.prevSuffix.characters = 6;
 
@@ -479,16 +491,16 @@ CDialog.prototype = {
 
 
 		dlg.row7 = dlg.add('group'); //settPnl.
-		dlg.log = dlg.row7.add('Button', undefined, 'HTML log file...');
+		dlg.log = dlg.row7.add('Button', undefined, {en: 'HTML log file...', ru: 'HTML лог-файл...'});
 		dlg.logpath = dlg.row7.add('EditText', undefined, '', {readonly: true, borderless: true});
 		dlg.logpath.characters = 50;
 		dlg.log.onClick = $cd(this, this.chooseFile);
 
 		dlg.btnPnl = dlg.add('group');
 		dlg.btnPnl.alignment = 'center';
-		dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, 'Build', {name: 'ok'});
+		dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, {en: 'Build', ru: 'Запустить'}, {name: 'ok'});
 		dlg.btnPnl.buildBtn.enabled = false;
-		dlg.btnPnl.cancelBtn = dlg.btnPnl.add('button', undefined, 'Cancel', {name: 'cancel'});
+		dlg.btnPnl.cancelBtn = dlg.btnPnl.add('button', undefined, {en: 'Cancel', ru: 'Отменить'}, {name: 'cancel'});
 
 		dlg.btnPnl.buildBtn.onClick = $cd(this, this.start);
 		dlg.btnPnl.cancelBtn.onClick = function () {
@@ -504,7 +516,12 @@ CDialog.prototype = {
 	 show: function() {
 		 this._initGUI();
 		 this.dlg.show();
-	 }
+	 },
+
+	_L: {	/*локализация*/
+		suffix: {en: 'Suffix:', ru: 'Суффикс:'},
+		size: {en: 'Reference size:', ru: 'Размер:'}
+	}
 };
 
 function CParam(dim, qual, suffix, mode) {
