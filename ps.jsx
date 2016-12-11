@@ -1,4 +1,4 @@
-﻿/* 
+﻿/*
 <javascriptresource>
 	<name>Generate report images</name>
 	<type>automate</type>
@@ -20,12 +20,14 @@ $.localize = true; // автолокализация
 * автоматически подтягивать единственный txt файл в папке
 * проверять наличие файлика с описаниями
 * filenames with spaces -- это надо менять формат файла
-* высота больших?
+* высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
 * output folder
 * переделать layout на xml
 * запоминать настройки с прошлого запуска?  try $.setenv / $.getenv
-*
+
+* ++ tooltips
+* ++ прерываем выполнение
 * ++ localization
 * ++ font -- выбирать Calibri по умолчанию
 * +- font setup, ?? а что не так?
@@ -152,9 +154,11 @@ CDialog.prototype = {
 	},
 
 	start: function() {
-		var c = this.dlg;
-		app.breakProcess = false;
+		app.breakProcess = app._isRunning || false;
+		if (app._isRunning)
+			return;
 
+        var c = this.dlg;
 		var qual = this._limit(c.qual, 100, 0, 100);
 		var dim = this._limit(c.refDim, 1000, 0, null);
 		var param = c.main.value ? new CParam(dim, Math.round(qual * 12 / 100), c.suffix.text || '', CParam.prototype.ResizeMode.minSide) : null;
@@ -165,7 +169,7 @@ CDialog.prototype = {
 
 		if (c.font.selection != null) {
 			param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
-			param.textHeight = this._limit(c.textHeight, 18, 0, 96);
+			param.textHeight = this._limit(c.textHeight, 29, 0, 96);
 		}
 
 		var logArr = [];
@@ -181,10 +185,14 @@ CDialog.prototype = {
 
 		app.backgroundColor = bkCol;
 
+		app._isRunning = true;
+        c.btnPnl.buildBtn.text = this._L.interrupt;
 		this.processFolder(this.srcFolder, c.recursive.value, param, prevParam, logArr, c.psd.selection.index == 1, c.desc.text);
 
 		if (c.logFile)
 			this.writeLog(c.logFile, logArr);
+        app._isRunning = false;
+        c.btnPnl.buildBtn.text = this._L.build;
 
 		app.preferences.rulerUnits = originalUnit;
 		app.preferences.typeUnits = orgTypeUnit;
@@ -358,6 +366,26 @@ CDialog.prototype = {
 		}
 	},
 
+	_addSuffixControl: function(parent, defVal)
+	{
+        var row2 = parent.add('group');
+        this._adjustStatic(row2.add('StaticText', undefined, this._L.suffix));
+        var ctrl = row2.add('EditText', undefined, defVal);
+        ctrl.characters = 6;
+        return ctrl;
+	},
+
+	_addQualControl:function (parent, caption, defVal) {
+        var row = parent.add('group');
+        this._adjustStatic(row.add('StaticText', undefined, caption));
+        var res = row.add('EditText', undefined, defVal);
+        res.characters = 6;
+        res.minvalue = 1;
+        res.maxvalue = 100;
+
+        return res;
+    },
+
 	_initGUI: function() {
 		var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3');
 		this.dlg = dlg;
@@ -421,34 +449,28 @@ CDialog.prototype = {
 		dlg.TransformPnl.alignChildren = 'left';
 		//dlg.TransformPnl.orientation = 'row';
 
+        dlg.suffix = this._addSuffixControl(dlg.TransformPnl, '_r');
+
 		dlg.row0 = dlg.TransformPnl.add('group');
 		this._adjustStatic(dlg.row0.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
 		dlg.refDim = dlg.row0.add('EditText', undefined, '1000');
 		dlg.refDim.characters = 6;
 		dlg.refDim.minvalue = 1;
+		dlg.refDim.helpTip = {en: '0 - don\'t resize', ru: '0 - не масштабировать'};
 
-		dlg.row1 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row1.add('StaticText', undefined, {en: 'Quality:', ru: 'Качество: '}));
-		dlg.qual = dlg.row1.add('EditText', undefined, '100');
-		dlg.qual.characters = 6;
-		dlg.qual.minvalue = 1;
-		dlg.qual.maxvalue = 100;
+        dlg.row3 = dlg.TransformPnl.add('group');
+        this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
+        dlg.psd = dlg.row3.add('dropdownlist', undefined, ['JPEG', 'PSD']);
+        dlg.psd.selection = 0;
+        dlg.psd.onChange = $cd(this, this._onPsdChange);
 
-		dlg.row2 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row2.add('StaticText', undefined, this._L.suffix));
-		dlg.suffix = dlg.row2.add('EditText', undefined, '_r');
-		dlg.suffix.characters = 6;
-
-		dlg.row3 = dlg.TransformPnl.add('group');
-		this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
-		dlg.psd = dlg.row3.add('dropdownlist', undefined, ['JPEG', 'PSD']);
-		dlg.psd.selection = 0;
-		dlg.psd.onChange = $cd(this, this._onPsdChange);
+        dlg.qual = this._addQualControl(dlg.TransformPnl, {en: 'Quality:', ru: 'Качество:'}, '100');
 
 		dlg.row4_ = dlg.TransformPnl.add('group');
 		this._adjustStatic(dlg.row4_.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
-		dlg.textHeight = dlg.row4_.add('EditText', undefined, '18');
+		dlg.textHeight = dlg.row4_.add('EditText', undefined, '29');
 		dlg.textHeight.characters = 6;
+        dlg.textHeight.helpTip = {en: '0 - don\'t add text', ru: '0 - не добавлять подписи'};
 
 		dlg.row5_ = dlg.TransformPnl.add('group');
 		this._adjustStatic(dlg.row5_.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
@@ -465,7 +487,7 @@ CDialog.prototype = {
         }
         dlg.font.selection = selIndex || 0;
 
-		//var t = this;
+		var t = this;
         dlg.textHeight.onChange = function() {t.dlg.font.enabled = t._limit(t.dlg.textHeight, 4, 0, 96) > 0; };
 
 		/*******************************************************/
@@ -477,23 +499,16 @@ CDialog.prototype = {
 		dlg.settPnl = dlg.col2.add('panel', undefined, '');
 		dlg.settPnl.alignChildren = 'left';
 
+        dlg.prevSuffix = this._addSuffixControl(dlg.settPnl, '_prev');
+
 		dlg.row4 = dlg.settPnl.add('group');
 		this._adjustStatic(dlg.row4.add('StaticText', undefined, this._L.size));
 		dlg.prevRefDim = dlg.row4.add('EditText', undefined, '200');
 		dlg.prevRefDim.characters = 6;
 		dlg.prevRefDim.minvalue = 1;
+        dlg.prevRefDim.helpTip = {en: '0 - don\'t resize', ru: '0 - не масштабировать'};
 
-		dlg.row5 = dlg.settPnl.add('group');
-		this._adjustStatic(dlg.row5.add('StaticText', undefined, {en: 'JPEG quality:', ru: 'Качество:'}));
-		dlg.prevQual = dlg.row5.add('EditText', undefined, '75');
-		dlg.prevQual.characters = 6;
-		dlg.prevQual.minvalue = 1;
-		dlg.prevQual.maxvalue = 100;
-
-		dlg.row6 = dlg.settPnl.add('group');
-		this._adjustStatic(dlg.row6.add('StaticText', undefined, this._L.suffix));
-		dlg.prevSuffix = dlg.row6.add('EditText', undefined, '_prev');
-		dlg.prevSuffix.characters = 6;
+		dlg.prevQual = this._addQualControl(dlg.settPnl, {en: 'JPEG quality:', ru: 'Качество:'}, '75');
 
 		/*******************************************************/
 
@@ -506,7 +521,7 @@ CDialog.prototype = {
 
 		dlg.btnPnl = dlg.add('group');
 		dlg.btnPnl.alignment = 'center';
-		dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, {en: 'Build', ru: 'Запустить'}, {name: 'ok'});
+		dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, this._L.build, {name: 'ok'});
 		dlg.btnPnl.buildBtn.enabled = false;
 		dlg.btnPnl.cancelBtn = dlg.btnPnl.add('button', undefined, {en: 'Cancel', ru: 'Отменить'}, {name: 'cancel'});
 
@@ -527,6 +542,8 @@ CDialog.prototype = {
 	 },
 
 	_L: {	/*локализация*/
+		build: {en: 'Build', ru: 'Запустить'},
+        interrupt: {en: 'Break', ru: 'Прервать'},
 		suffix: {en: 'Suffix:', ru: 'Суффикс:'},
 		size: {en: 'Reference size:', ru: 'Размер:'}
 	}
