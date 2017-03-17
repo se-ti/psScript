@@ -10,11 +10,10 @@
 #script "Preview builder"
 
 // $.level = 2;
-// $.locale = 'ru';
+ $.locale = 'ru';
 $.localize = true; // автолокализация
 
 /* todo
-* автоматически подтягивать единственный txt файл в папке
 * проверять наличие файлика с описаниями
 * высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
@@ -22,6 +21,8 @@ $.localize = true; // автолокализация
 * переделать layout на xml
 * запоминать настройки с прошлого запуска?  try $.setenv / $.getenv
 
+* ++ галочку для отключения ресайза и добавления текста
+* ++ автоматически подтягивать единственный txt файл в папке
 * ++ filenames with spaces -- просто возьми в кавычки
 * ++ tooltips
 * ++ прерываем выполнение
@@ -76,6 +77,7 @@ CDialog.prototype = {
         this._setPathText(this.dlg.path, this.srcFolder);
 
         this._lastPath = this.srcFolder ? (this.srcFolder instanceof Folder ? this.srcFolder.fullName : this.srcFolder.path) : null;
+        this._guessDescription();
     },
 
     _setPathText: function (ctrl, file) {
@@ -93,7 +95,29 @@ CDialog.prototype = {
         else if (path != '')
             alert(localize({en: 'Path "%1" doesn\'t exist!', ru: 'Папка "%1" не существует'}, path));
 
+        this._guessDescription();
         this._canStart();
+    },
+
+    _guessDescription: function() {
+        if (!this.srcFolder || this.dlg.recursive.value)
+            return;
+
+        var res = [];
+        var files = this.srcFolder.getFiles();
+        for (var i = 0; i < files.length; i++)
+            if (files[i] instanceof File)
+            {
+                var dn = files[i].displayName;
+                var ext = dn.slice(dn.lastIndexOf('.')).toLowerCase();
+                if (dn == "descript.ion" || ext == '.txt')
+                    res.push(dn);
+            }
+
+        if (res.length == 1) {
+            this.dlg.desc.text = res[0];
+            this._canAddText();
+        }
     },
 
     _canStart: function() {
@@ -103,6 +127,8 @@ CDialog.prototype = {
     _canAddText: function () {
         var c = this.dlg;
         var val = c.main.value && ((c.desc.text || '') != '');
+        c.addText.enabled = val;
+        val = val && c.addText.value;
         c.textHeight.enabled = val;
         c.font.enabled = val;
     },
@@ -111,12 +137,13 @@ CDialog.prototype = {
         var c = this.dlg;
         var val = c.main.value;
 
-        c.refDim.enabled = val;
+        c.resize.enabled = val;
         c.qual.enabled = val && c.psd.selection.index != 1;
         c.suffix.enabled = val;
         c.psd.enabled = val;
         this._canAddText();
 
+        this._onResizeChange();
         this._canStart();
     },
 
@@ -124,15 +151,26 @@ CDialog.prototype = {
         var c = this.dlg;
         var val = c.preview.value;
 
-        c.prevRefDim.enabled = val;
+        c.resizePrev.enabled = val;
         c.prevQual.enabled = val;
         c.prevSuffix.enabled = val;
 
+        this._onResizePreviewChange();
         this._canStart();
     },
 
     _onPsdChange: function (e) {
         this.dlg.qual.enabled = this.dlg.main.value && this.dlg.psd.selection.index != 1;
+    },
+
+    _onResizeChange: function(e) {
+        var c = this.dlg;
+        c.refDim.enabled = c.main.value && c.resize.value;
+    },
+
+    _onResizePreviewChange: function(e) {
+        var c = this.dlg;
+        c.prevRefDim.enabled = c.preview.value && c.resizePrev.value;
     },
 
     _limit: function(control, defval, min, max) {
@@ -156,16 +194,16 @@ CDialog.prototype = {
 
         var c = this.dlg;
         var qual = this._limit(c.qual, 100, 0, 100);
-        var dim = this._limit(c.refDim, 1000, 0, null);
+        var dim = c.resize.value ? this._limit(c.refDim, 1000, 1, null): 0;
         var param = c.main.value ? new CParam(dim, Math.round(qual * 12 / 100), c.suffix.text || '', CParam.prototype.ResizeMode.minSide) : null;
 
         qual = this._limit(c.prevQual, 75, 0, 100);
-        dim = this._limit(c.prevRefDim, 200, 0, null);
+        dim = c.resizePrev.value ? this._limit(c.prevRefDim, 200, 1, null) : 0;
         var prevParam = c.preview.value ? new CParam(dim, qual, c.prevSuffix.text || '', CParam.prototype.ResizeMode.refSize) : null;
 
         if (c.font.selection != null) {
             param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
-            param.textHeight = this._limit(c.textHeight, 29, 0, 96);
+            param.textHeight = c.addText.value ? this._limit(c.textHeight, 29, 0, 96) : 0;
         }
 
         var originalUnit = app.preferences.rulerUnits;
@@ -249,7 +287,7 @@ CDialog.prototype = {
     },
 
     _initGUI: function() {
-        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3.2');
+        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.4.0');
         this.dlg = dlg;
 
         dlg.alignChildren = 'fill';
@@ -260,7 +298,7 @@ CDialog.prototype = {
         dlg.ctrlPnl.alignChildren = 'left';
         dlg.srcGrp = dlg.ctrlPnl.add('group');
 
-        dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});	// , {readonly: false, borderless: true}
+        dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});
         dlg.path.characters = 40;
         dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
 
@@ -313,12 +351,17 @@ CDialog.prototype = {
 
         dlg.suffix = this._addSuffixControl(dlg.TransformPnl, '_r');
 
+        dlg.row_0 = dlg.TransformPnl.add('group');
+        this._adjustStatic(dlg.row_0.add('StaticText', undefined, ''));
+        dlg.resize = dlg.row_0.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
+        dlg.resize.value = true;
+        dlg.resize.onClick = $cd(this, this._onResizeChange);
+
         dlg.row0 = dlg.TransformPnl.add('group');
         this._adjustStatic(dlg.row0.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
         dlg.refDim = dlg.row0.add('EditText', undefined, '1000');
         dlg.refDim.characters = 6;
         dlg.refDim.minvalue = 1;
-        dlg.refDim.helpTip = {en: '0 - don\'t resize', ru: '0 - не масштабировать'};
 
         dlg.row3 = dlg.TransformPnl.add('group');
         this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
@@ -328,11 +371,16 @@ CDialog.prototype = {
 
         dlg.qual = this._addQualControl(dlg.TransformPnl, {en: 'Quality:', ru: 'Качество:'}, '100');
 
+        dlg.row4__ = dlg.TransformPnl.add('group');
+        this._adjustStatic(dlg.row4__.add('StaticText', undefined, ''));
+        dlg.addText = dlg.row4__.add('checkbox', undefined, {en: 'Add text', ru: 'Добавить подпись'});
+        dlg.addText.value = true;
+        dlg.addText.onClick = $cd(this, this._canAddText);
+
         dlg.row4_ = dlg.TransformPnl.add('group');
         this._adjustStatic(dlg.row4_.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
         dlg.textHeight = dlg.row4_.add('EditText', undefined, '29');
         dlg.textHeight.characters = 6;
-        dlg.textHeight.helpTip = {en: '0 - don\'t add text', ru: '0 - не добавлять подписи'};
 
         dlg.row5_ = dlg.TransformPnl.add('group');
         this._adjustStatic(dlg.row5_.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
@@ -363,12 +411,17 @@ CDialog.prototype = {
 
         dlg.prevSuffix = this._addSuffixControl(dlg.settPnl, '_prev');
 
+        dlg.row_0_ = dlg.settPnl.add('group');
+        this._adjustStatic(dlg.row_0_.add('StaticText', undefined, ''));
+        dlg.resizePrev = dlg.row_0_.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
+        dlg.resizePrev.value = true;
+        dlg.resizePrev.onClick = $cd(this, this._onResizePreviewChange);
+
         dlg.row4 = dlg.settPnl.add('group');
         this._adjustStatic(dlg.row4.add('StaticText', undefined, this._L.size));
         dlg.prevRefDim = dlg.row4.add('EditText', undefined, '200');
         dlg.prevRefDim.characters = 6;
         dlg.prevRefDim.minvalue = 1;
-        dlg.prevRefDim.helpTip = {en: '0 - don\'t resize', ru: '0 - не масштабировать'};
 
         dlg.prevQual = this._addQualControl(dlg.settPnl, {en: 'JPEG quality:', ru: 'Качество:'}, '75');
 
