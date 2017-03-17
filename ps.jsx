@@ -22,7 +22,7 @@ $.localize = true; // автолокализация
 * переделать layout на xml
 * запоминать настройки с прошлого запуска?  try $.setenv / $.getenv
 
-* filenames with spaces -- просто возьми в кавычки
+* ++ filenames with spaces -- просто возьми в кавычки
 * ++ tooltips
 * ++ прерываем выполнение
 * ++ localization
@@ -168,8 +168,6 @@ CDialog.prototype = {
             param.textHeight = this._limit(c.textHeight, 29, 0, 96);
         }
 
-        var logArr = [];
-
         var originalUnit = app.preferences.rulerUnits;
         var orgTypeUnit = app.preferences.typeUnits;
         var orgColor = app.backgroundColor;
@@ -183,7 +181,9 @@ CDialog.prototype = {
 
         app._isRunning = true;
         c.btnPnl.buildBtn.text = this._L.interrupt;
-        this.processFolder(this.srcFolder, c.recursive.value, param, prevParam, logArr, c.psd.selection.index == 1, c.desc.text);
+
+        var processor = new CImageProcessor(c.recursive.value, param, prevParam, c.psd.selection.index == 1);
+        var logArr = processor.process(this.srcFolder, c.desc.text, function() { return app.breakProcess;} );
 
         if (c.logFile)
             this.writeLog(c.logFile, logArr);
@@ -222,147 +222,6 @@ CDialog.prototype = {
         dlg.logFile.close();
     },
 
-    processFolder: function(folder, recursive, param, prevParam, logItems, psd, descriptions) {
-        if (folder == null)
-            return;
-
-        if (folder instanceof File) {
-            this.processFile(folder, param, prevParam, logItems, psd, null);
-            return;
-        }
-
-        var files = this.getFolderFiles(folder, descriptions);
-        if (!files)
-            return;
-
-        for (var i = 0; i < files.length; i++) {
-            if (files[i].isFile())
-                this.processFile(files[i].file, param, prevParam, logItems, psd, files[i].text);
-            else if (recursive && files[i].isFolder())
-                this.processFolder(files[i].file, recursive, param, prevParam, logItems, psd, descriptions);
-
-            if (app.breakProcess)
-                break;
-        }
-    },
-
-    getFolderFiles: function(folder, descriptions) {
-        var res = [];
-        if (!folder)
-            return res;
-        var scanFolder = true;
-
-        if ((descriptions || '') != '') {
-            var file;
-            var desc = File(folder.fullName + '/' + descriptions);
-            if (desc && desc.open("r")) {
-                while (!desc.eof) {
-                    var ln = desc.readln().replace(/(^\s*|\/\/.*)/gi, ''); // // is a comment
-                    if ((ln || '') == '')
-                        continue;
-
-                    file = /^"[^~"]*"/gi.exec(ln);
-                    if (file) {
-                        ln = ln.substring(file[0].length).replace(/^\s+/, '');
-                        file = file[0].substring(1, file[0].length-1)
-                    }
-                    else {
-                        file = /^\S*/gi.exec(ln);
-                        ln = ln.replace(/^\S*\s+/i, '');
-                    }
-                    res.push(new CFile(File(folder.fullName + '/' + file), ln));
-                }
-                desc.close();
-                scanFolder = false;
-            }
-        }
-
-        var files = folder.getFiles();
-        for (var i = 0; i < files.length; i++) {
-            if (scanFolder || !(files[i] instanceof File))
-                res.push(new CFile(files[i], ''));
-        }
-
-        return res;
-    },
-
-    processFile: function (file, param, prevParam, logFile, psd, text) {
-        if (!file.exists) {
-            logFile.push(new LogItem(file.fsName, 'File doesn\'t exist'));
-            return;
-        }
-
-        var ext = file.fullName.slice(file.fullName.lastIndexOf('.')).toLowerCase();
-        if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".bmp" || ext == ".psd") {
-            var doc = app.open(file);
-            app.activeDocument = doc;
-
-            var item = new LogItem();
-            if (param) {
-                var state = doc.activeHistoryState;
-                this.process(doc, file, param, item, true, text, psd);
-                doc.activeHistoryState = state;
-            }
-            if (prevParam)
-                this.process(doc, file, prevParam, item, false, null, false);
-
-            doc.close(SaveOptions.DONOTSAVECHANGES);
-            logFile.push(item);
-        }
-    },
-
-    _addText: function(doc, param, text) {
-        var newDpi = 300;
-        if (doc.mode == DocumentMode.BITMAP || doc.mode == DocumentMode.INDEXEDCOLOR || doc.mode == DocumentMode.DUOTONE)
-            doc.changeMode(ChangeMode.RGB);
-
-        if (doc.bitsPerChannel == BitsPerChannelType.ONE)
-            doc.bitsPerChannel = BitsPerChannelType.EIGHT;
-
-        var pos = Number(doc.height);
-        doc.resizeCanvas(null, Math.round(pos + param.textHeight * 3 / 2), AnchorPosition.TOPLEFT);
-        doc.resizeImage(null, null, newDpi, ResampleMethod.NONE);
-
-        var artLayerRef = doc.artLayers.add();
-        artLayerRef.kind = LayerKind.TEXT;
-        var textItemRef = artLayerRef.textItem;
-
-        textItemRef.position = [0, Math.round(pos + param.textHeight * 1.1)];
-
-        var uv = new UnitValue(param.textHeight, 'px');
-        uv.baseUnit = UnitValue(1 / newDpi, 'in');					// todo а почему 300 dpi?
-        textItemRef.size = uv.as('pt');
-        textItemRef.antiAliasMethod = AntiAlias.SHARP;
-        textItemRef.ligatures = true;
-        if (param.font)
-            textItemRef.font = param.font.postScriptName;
-        textItemRef.contents = text;
-    },
-
-    process: function (doc, file, param, logItem, save, text, psd) {
-        var fname = file.fullName.slice(0, file.fullName.lastIndexOf('.'));
-        var logname = file.fsName.slice(0, file.fsName.lastIndexOf('.'));
-
-        param.resize(doc);
-
-        var hasText = save && (text || '') != '' && param.textHeight > 0;
-        if (hasText)
-            this._addText(doc, param, text);
-
-        var ext = psd && save ? '.psd' : '.jpg';
-//		alert(fname + param.suffix + ext);
-        var outFile = new File(fname + param.suffix + ext);
-
-        param.save(doc, outFile, save, psd);
-
-        if (logItem) {
-            if (save)
-                logItem.addMain(logname + param.suffix + ext, text);
-            else
-                logItem.addPreview(logname + param.suffix + ext, Number(doc.width), Number(doc.height));
-        }
-    },
-
     _adjustStatic: function (st) {
         if (st) {
             st.size = [92, 14];
@@ -370,8 +229,7 @@ CDialog.prototype = {
         }
     },
 
-    _addSuffixControl: function(parent, defVal)
-    {
+    _addSuffixControl: function(parent, defVal) {
         var row2 = parent.add('group');
         this._adjustStatic(row2.add('StaticText', undefined, this._L.suffix));
         var ctrl = row2.add('EditText', undefined, defVal);
@@ -391,7 +249,7 @@ CDialog.prototype = {
     },
 
     _initGUI: function() {
-        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3.1');
+        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.3.2');
         this.dlg = dlg;
 
         dlg.alignChildren = 'fill';
@@ -569,11 +427,11 @@ CParam.prototype = {
         refSize: 5
     },
 
-    save: function(doc, file, save, psd)
+    save: function(doc, file, saveOrExport, psd)
     {
         if (!doc || !file)
             return;
-        if (save)
+        if (saveOrExport)
         {
             var options;
             if (psd)
@@ -650,6 +508,165 @@ CParam.prototype = {
 
         if ((newWidth == null || newWidth != null && newWidth < doc.width) && (newHeight == null || newHeight!= null && newHeight < doc.height))
             doc.resizeImage(newWidth, newHeight, undefined, ResampleMethod.BICUBIC);
+    }
+};
+
+function CImageProcessor(recursive, param, prevParam, psd) {
+    this._recursive = recursive;
+    this._param = param;
+    this._prevParam = prevParam;
+    this._psd = psd;
+
+    this._logArr = [];
+}
+
+CImageProcessor.prototype = {
+
+    process: function(folder, descriptions, breakDelegate) {
+        this._logArr = [];
+        this._processFolder(folder, descriptions, breakDelegate);
+        return this._logArr;
+    },
+
+    _processFolder: function(folder, descriptions, breakDelegate) {
+        if (folder == null)
+            return;
+
+        if (folder instanceof File) {
+            this._processFile(folder, null);
+            return;
+        }
+
+        var files = this._getFolderFiles(folder, descriptions);
+        if (!files)
+            return;
+
+        for (var i = 0; i < files.length; i++) {
+            if (files[i].isFile())
+                this._processFile(files[i].file, files[i].text);
+            else if (this._recursive && files[i].isFolder())
+                this._processFolder(files[i].file, descriptions, breakDelegate);
+
+            if (breakDelegate && breakDelegate())
+                break;
+        }
+    },
+
+    _getFolderFiles: function(folder, descriptions) {
+        var res = [];
+        if (!folder)
+            return res;
+        var scanFolder = true;
+
+        if ((descriptions || '') != '') {
+            var file;
+            var desc = File(folder.fullName + '/' + descriptions);
+            if (desc && desc.open("r")) {
+                while (!desc.eof) {
+                    var ln = desc.readln().replace(/(^\s*|\/\/.*)/gi, ''); // // is a comment
+                    if ((ln || '') == '')
+                        continue;
+
+                    file = /^"[^~"]*"/gi.exec(ln);
+                    if (file) {
+                        ln = ln.substring(file[0].length).replace(/^\s+/, '');
+                        file = file[0].substring(1, file[0].length-1)
+                    }
+                    else {
+                        file = /^\S*/gi.exec(ln);
+                        ln = ln.replace(/^\S*\s+/i, '');
+                    }
+                    res.push(new CFile(File(folder.fullName + '/' + file), ln));
+                }
+                desc.close();
+                scanFolder = false;
+            }
+        }
+
+        var files = folder.getFiles();
+        for (var i = 0; i < files.length; i++) {
+            if (scanFolder || !(files[i] instanceof File))
+                res.push(new CFile(files[i], ''));
+        }
+
+        return res;
+    },
+
+    _processFile: function (file, text) {
+        if (!file.exists) {
+            this._logArr.push(new LogItem(file.fsName, 'File doesn\'t exist'));
+            return;
+        }
+
+        var ext = file.fullName.slice(file.fullName.lastIndexOf('.')).toLowerCase();
+        if (ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || ext == ".bmp" || ext == ".psd") {
+            var doc = app.open(file);
+            app.activeDocument = doc;
+
+            var item = new LogItem();
+            if (this._param) {
+                var state = doc.activeHistoryState;
+                this._processImage(doc, file, this._param, item, true, text, this._psd);
+                doc.activeHistoryState = state;
+            }
+            if (this._prevParam)
+                this._processImage(doc, file, this._prevParam, item, false, null, false);
+
+            doc.close(SaveOptions.DONOTSAVECHANGES);
+            this._logArr.push(item);
+        }
+    },
+
+    _addText: function(doc, param, text) {
+        var newDpi = 300;
+        if (doc.mode == DocumentMode.BITMAP || doc.mode == DocumentMode.INDEXEDCOLOR || doc.mode == DocumentMode.DUOTONE)
+            doc.changeMode(ChangeMode.RGB);
+
+        if (doc.bitsPerChannel == BitsPerChannelType.ONE)
+            doc.bitsPerChannel = BitsPerChannelType.EIGHT;
+
+        var pos = Number(doc.height);
+        doc.resizeCanvas(null, Math.round(pos + param.textHeight * 3 / 2), AnchorPosition.TOPLEFT);
+        doc.resizeImage(null, null, newDpi, ResampleMethod.NONE);
+
+        var artLayerRef = doc.artLayers.add();
+        artLayerRef.kind = LayerKind.TEXT;
+        var textItemRef = artLayerRef.textItem;
+
+        textItemRef.position = [0, Math.round(pos + param.textHeight * 1.1)];
+
+        var uv = new UnitValue(param.textHeight, 'px');
+        uv.baseUnit = UnitValue(1 / newDpi, 'in');					// todo а почему 300 dpi?
+        textItemRef.size = uv.as('pt');
+        textItemRef.antiAliasMethod = AntiAlias.SHARP;
+        textItemRef.ligatures = true;
+        if (param.font)
+            textItemRef.font = param.font.postScriptName;
+        textItemRef.contents = text;
+    },
+
+    _processImage: function (doc, file, param, logItem, save, text, psd) {
+        var fname = file.fullName.slice(0, file.fullName.lastIndexOf('.'));
+        var logname = file.fsName.slice(0, file.fsName.lastIndexOf('.'));
+
+        param.resize(doc);
+
+        var hasText = save && (text || '') != '' && param.textHeight > 0;
+        if (hasText)
+            this._addText(doc, param, text);
+
+        var ext = psd && save ? '.psd' : '.jpg';
+//		alert(fname + param.suffix + ext);
+        var outFile = new File(fname + param.suffix + ext);
+
+        param.save(doc, outFile, save, psd);
+
+        if (logItem) {
+            if (save)
+                logItem.addMain(logname + param.suffix + ext, text);
+            else
+                logItem.addPreview(logname + param.suffix + ext, Number(doc.width), Number(doc.height));
+        }
     }
 };
 
