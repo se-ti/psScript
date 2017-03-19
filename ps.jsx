@@ -10,7 +10,7 @@
 #script "Preview builder"
 
 // $.level = 2;
- $.locale = 'ru';
+//$.locale = 'ru';
 $.localize = true; // автолокализация
 
 /* todo
@@ -19,7 +19,7 @@ $.localize = true; // автолокализация
 * +- ввод путей руками
 * output folder
 * переделать layout на xml
-* запоминать настройки с прошлого запуска?  try $.setenv / $.getenv
+* +-   запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv
 
 * ++ галочку для отключения ресайза и добавления текста
 * ++ автоматически подтягивать единственный txt файл в папке
@@ -41,6 +41,35 @@ function $cd(ctx, func) {
     };
 }
 
+String.format = function() {
+    var s = arguments[0];
+    for (var i = 0; i < arguments.length - 1; i++) {
+        var reg = new RegExp("\\{" + i + "\\}", "gm");
+        s = s.replace(reg, arguments[i + 1]);
+    }
+
+    return s;
+};
+
+String._htmlSubstitutes = [{r:/&/gi, t:'&amp;'},
+    {r:/</gi, t:'&lt;'},
+    {r:/\>/gi, t:'&gt;'},
+    {r:/'/gi, t:'&apos;'},
+    {r:/"/gi, t:'&quot;'}];
+
+String.toHTML = function(str)
+{
+    if (!str || ! str instanceof String)
+        return '';
+
+    var res = str;
+    var arr = String._htmlSubstitutes;
+
+    for (var i = 0; i < arr.length; i++)
+        res = res.replace(arr[i].r, arr[i].t);
+    return res;
+};
+
 CDialog =  function() {
     this.dlg = null;
     this._c = {
@@ -48,10 +77,14 @@ CDialog =  function() {
     };
 
     this.srcFolder = null;
-    this._lastPath = null;
+    this._lastPath = $.getenv(this._consts.envVar);
 };
 
 CDialog.prototype = {
+
+    _consts: {
+      envVar: 'psScriptPath'
+    },
 
     chooseFile: function() {
         var title = {en: 'Choose file to save log', ru: 'Выберите файл для лога'};
@@ -70,14 +103,19 @@ CDialog.prototype = {
         var title = {en: 'Choose folder to convert',
             ru: 'Выберите папку с обрабатываемыми изображениями'};
 
-        this.srcFolder =  this._lastPath ? Folder(this._lastPath).selectDlg(title) : Folder.selectDialog(title);
+        this.srcFolder = this._lastPath ? Folder(this._lastPath).selectDlg(title) : Folder.selectDialog(title);
         this.dlg.recursive.enabled = this.srcFolder instanceof Folder;
         this._canStart();
 
         this._setPathText(this.dlg.path, this.srcFolder);
 
-        this._lastPath = this.srcFolder ? (this.srcFolder instanceof Folder ? this.srcFolder.fullName : this.srcFolder.path) : null;
+        this._setPath(this.srcFolder ? (this.srcFolder instanceof Folder ? this.srcFolder.fullName : this.srcFolder.path) : null);
         this._guessDescription();
+    },
+
+    _setPath: function(path) {
+        this._lastPath = path;
+        $.setenv(this._consts.envVar, path);
     },
 
     _setPathText: function (ctrl, file) {
@@ -91,7 +129,8 @@ CDialog.prototype = {
         this.dlg.recursive.enabled = f.exists;
         this.srcFolder = f.exists ? f : null;
         if (f.exists)
-            this._lastPath = this.srcFolder.fullName;
+            this._setPath(this.srcFolder.fullName);
+
         else if (path != '')
             alert(localize({en: 'Path "%1" doesn\'t exist!', ru: 'Папка "%1" не существует'}, path));
 
@@ -199,7 +238,7 @@ CDialog.prototype = {
 
         qual = this._limit(c.prevQual, 75, 0, 100);
         dim = c.resizePrev.value ? this._limit(c.prevRefDim, 200, 1, null) : 0;
-        var prevParam = c.preview.value ? new CParam(dim, qual, c.prevSuffix.text || '', CParam.prototype.ResizeMode.refSize) : null;
+        var prevParam = c.preview.value ? new CParam(dim, qual, c.prevSuffix.text || '', CParam.prototype.ResizeMode.height) : null;    // CParam.prototype.ResizeMode.refSize
 
         if (c.font.selection != null) {
             param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
@@ -237,6 +276,7 @@ CDialog.prototype = {
     writeLog: function(logFile, logArr) {
         var dlg = this.dlg;
         var out = [];
+        var out2 = [];
         var list = [];
         var item;
         var len = logArr.length;
@@ -245,6 +285,7 @@ CDialog.prototype = {
 
         for (var i = 0; i < len; i++) {
             out.push(logArr[i].toHTML(logPath, lpLen));
+            out2.push(logArr[i].purikovItem());
             if ((item = logArr[i].imageListItem(logPath, lpLen)) != null)
                 list.push(item);
         }
@@ -255,6 +296,12 @@ CDialog.prototype = {
         dlg.logFile.write("<body>\n");
         dlg.logFile.write(out.join('<br/>\n'));
         dlg.logFile.write('<br/><br/>\n\n');
+        if (false && out2.length > 0)
+        {
+            dlg.logFile.write('<div class="zoom-gallery">\n\t');
+            dlg.logFile.write(out2.join('<br/>\n\t'));
+            dlg.logFile.write('\n</div><br/><br/>\n\n');
+        }
         dlg.logFile.write(list.join('<br/>\n'));
         dlg.logFile.write("\n</body>\n</html>\n");
         dlg.logFile.close();
@@ -301,6 +348,9 @@ CDialog.prototype = {
         dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});
         dlg.path.characters = 40;
         dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
+        if (this._lastPath != '')
+            dlg.path.text = File(this._lastPath).fsName;
+
 
         dlg.browseBtn = dlg.srcGrp.add('button', undefined, {en: 'Browse...', ru: 'Обзор...'});
         dlg.browseBtn.onClick = $cd(this, this.chooseFolder);
@@ -526,9 +576,10 @@ CParam.prototype = {
         switch (this.resizeMode)
         {
             case this.ResizeMode.width:
-            newWidth = this.dim;
-            break;
-            case this.ResizeMode.height: break;
+                newWidth = this.dim;
+                break;
+
+            case this.ResizeMode.height:
                 newHeight = this.dim;
                 break;
 
@@ -742,7 +793,7 @@ LogItem.prototype = {
         this.src = src || '';
         this.alt = alt || '';
 
-        var r = /^Фото \d+\.\s*/gi;
+        var r = /^Фото [\d.]+\s*/gi;
         var res = r.exec(this.alt);
 
         this.altTitle =  res? (res[0] || res ) : '';
@@ -758,7 +809,7 @@ LogItem.prototype = {
 
     _relativePath: function(path, logPath, logPathLen)
     {
-        return path.indexOf(logPath) == 0 ? ('./' + path.substring(logPathLen+1)).replace(/\\/gi, '/') : path;
+        return path.toLowerCase().indexOf(logPath.toLowerCase()) == 0 ? ('./' + path.substring(logPathLen+1)).replace(/\\/gi, '/') : path;
     },
 
     toHTML: function(logPath, pathLen)
@@ -780,12 +831,14 @@ LogItem.prototype = {
         {
             res = '<img src="' + this._relativePath(this.preview, logPath, pathLen) + '" width="' + this.width + '" height="' + this.height + '"';
             if (this.text != '')
-                res += ' alt="' + this.text + '"';
+                res += ' alt="' + String.toHTML(this.text) + '"';
             res += '/>'
         }
         //return head + res + tail;
 
-        return '<table class="img" style="margin: auto;">\n\t<tr>\n\t\t<td>\n\t\t\t' + head + res + tail + (this.alt != '' ? '\n\t\t\t<br>' + this.alt : '') + '\n\t\t</td>\n\t</tr>\n</table>';
+        var alt = this.alt != '' ? ('\n\t\t\t<br>' + String.toHTML(this.alt)) : '';
+
+        return '<table class="img" style="margin: auto;">\n\t<tr>\n\t\t<td>\n\t\t\t' + head + res + tail + alt + '\n\t\t</td>\n\t</tr>\n</table>';
     },
 
     imageListItem: function(logPath, pathLen)
@@ -793,9 +846,24 @@ LogItem.prototype = {
         if (this.alt == '' || this.src == '')
             return null;
 
-        return this.altTitle + '<a href="' + this._relativePath(this.src, logPath, pathLen) +  '" target="_blank">' + this.text + '</a>';
+        return String.format('{0}<a href="{1}" target="_blank">{2}</a>', String.toHTML(this.altTitle), this._relativePath(this.src, logPath, pathLen), String.toHTML(this.text));
+    },
+
+    purikovItem: function()
+    {
+        if (this.src == '')
+            return '';
+
+        var pos = this.src.lastIndexOf('\\');
+        var name = pos >= 0 ? this.src.substring(pos+1) : this.src;
+        pos = name.lastIndexOf('.');
+        if (pos >= 0)
+            name = name.substring(0, pos);
+
+        return String.format('[[$ReportPhoto? &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
     }
 };
+
 
 function CFile(file, text) {
     this.file = file;
