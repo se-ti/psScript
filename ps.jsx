@@ -18,8 +18,8 @@ $.localize = true; // автолокализация
 * высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
 * output folder
-* переделать layout на xml
-* +-   запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv
+* -- переделать layout на xml
+* -+ запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv   -- пока работает только пока не перезапустишь фотошоп
 
 * ++ галочку для отключения ресайза и добавления текста
 * ++ автоматически подтягивать единственный txt файл в папке
@@ -76,8 +76,11 @@ CDialog =  function() {
 
     };
 
+    this.addWestraMarkup = false;
     this.srcFolder = null;
-    this._lastPath = $.getenv(this._consts.envVar);
+
+    var val = $.getenv(this._consts.envVar);
+    this._lastPath = ((val || '') != '' && val != 'null') ? val : null;
 };
 
 CDialog.prototype = {
@@ -296,7 +299,7 @@ CDialog.prototype = {
         dlg.logFile.write("<body>\n");
         dlg.logFile.write(out.join('<br/>\n'));
         dlg.logFile.write('<br/><br/>\n\n');
-        if (false && out2.length > 0)
+        if (this.addWestraMarkup && out2.length > 0)
         {
             dlg.logFile.write('<div class="zoom-gallery">\n\t');
             dlg.logFile.write(out2.join('<br/>\n\t'));
@@ -315,6 +318,7 @@ CDialog.prototype = {
     },
 
     _addSuffixControl: function(parent, defVal) {
+        var rs = '';
         var row2 = parent.add('group');
         this._adjustStatic(row2.add('StaticText', undefined, this._L.suffix));
         var ctrl = row2.add('EditText', undefined, defVal);
@@ -323,14 +327,11 @@ CDialog.prototype = {
     },
 
     _addQualControl:function (parent, caption, defVal) {
-        var row = parent.add('group');
-        this._adjustStatic(row.add('StaticText', undefined, caption));
-        var res = row.add('EditText', undefined, defVal);
-        res.characters = 6;
-        res.minvalue = 1;
-        res.maxvalue = 100;
+        var rs = 'group {st: StaticText {text: "' + caption + '", justify: "right", size: [92, 14] },' +
+            'ed: EditText { characters: 6, minvalue: 1, maxvalue: 100, text: "'+ defVal +'"}' +
+            '}';
 
-        return res;
+        return parent.add(rs).ed;
     },
 
     _initGUI: function() {
@@ -348,9 +349,9 @@ CDialog.prototype = {
         dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});
         dlg.path.characters = 40;
         dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
-        if (this._lastPath != '')
-            dlg.path.text = File(this._lastPath).fsName;
 
+        if (this._lastPath)
+            dlg.path.text = File(this._lastPath).fsName;
 
         dlg.browseBtn = dlg.srcGrp.add('button', undefined, {en: 'Browse...', ru: 'Обзор...'});
         dlg.browseBtn.onClick = $cd(this, this.chooseFolder);
@@ -777,9 +778,10 @@ CImageProcessor.prototype = {
 function LogItem(src, error) {
         this.error = error || '';
         this.src = src || '';
-        this.alt = '';
-        this.altTitle = '';
-        this.text = '';
+
+        this.alt = '';          // Фото 13.2. Южный склон пер. Озерный
+        this.altTitle = '';     // Фото 13.2.
+        this.text = '';         // Южный склон пер. Озерный
 
         this.preview = '';
         this.width = 0;
