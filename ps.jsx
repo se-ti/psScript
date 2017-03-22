@@ -9,7 +9,7 @@
 #target photoshop
 #script "Preview builder"
 
-// $.level = 2;
+$.level = 2;
 //$.locale = 'ru';
 $.localize = true; // автолокализация
 
@@ -40,6 +40,12 @@ function $cd(ctx, func) {
         func.apply(ctx, arguments);
     };
 }
+
+if (String.prototype.trim == null)
+    String.prototype.trim = function() 
+    {
+        return this.replace(/^\s*/, '').replace(/\s*$/, '');
+    }
 
 String.format = function() {
     var s = arguments[0];
@@ -76,11 +82,15 @@ CDialog =  function() {
 
     };
 
-    this.addWestraMarkup = false;
+    this.addWestraMarkup = true;
     this.srcFolder = null;
 
     var val = $.getenv(this._consts.envVar);
     this._lastPath = ((val || '') != '' && val != 'null') ? val : null;
+    if (this._lastPath && (val = Folder(this._lastPath)) instanceof Folder)
+        this.srcFolder = val;
+    else
+        this._lastPath = null;
 };
 
 CDialog.prototype = {
@@ -94,8 +104,8 @@ CDialog.prototype = {
         var filter = {en: 'HTML files:*.html;*.htm,All files:*.*', ru:'HTML файлы:*.html;*.htm,Все файлы:*.*'};
 
         var dlg = this.dlg;
-        if (dlg.logFile)
-            dlg.logFile = dlg.logFile.openDlg(title, filter);
+        if (dlg.logFile || this.srcFolder)
+            dlg.logFile = (dlg.logFile || this.srcFolder).openDlg(title, filter);
         else
             dlg.logFile = File.openDialog(title, filter);
 
@@ -299,10 +309,12 @@ CDialog.prototype = {
         dlg.logFile.write("<body>\n");
         dlg.logFile.write(out.join('<br/>\n'));
         dlg.logFile.write('<br/><br/>\n\n');
+        
         if (this.addWestraMarkup && out2.length > 0)
         {
+            dlg.logFile.write('[[$ReportPhotoHeader]]\n');
             dlg.logFile.write('<div class="zoom-gallery">\n\t');
-            dlg.logFile.write(out2.join('<br/>\n\t'));
+            dlg.logFile.write(out2.join('\n\t'));
             dlg.logFile.write('\n</div><br/><br/>\n\n');
         }
         dlg.logFile.write(list.join('<br/>\n'));
@@ -413,6 +425,7 @@ CDialog.prototype = {
         dlg.refDim = dlg.row0.add('EditText', undefined, '1000');
         dlg.refDim.characters = 6;
         dlg.refDim.minvalue = 1;
+        dlg.row0.add('StaticText {text: "px"}');
 
         dlg.row3 = dlg.TransformPnl.add('group');
         this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
@@ -473,6 +486,7 @@ CDialog.prototype = {
         dlg.prevRefDim = dlg.row4.add('EditText', undefined, '200');
         dlg.prevRefDim.characters = 6;
         dlg.prevRefDim.minvalue = 1;
+        dlg.row4.add('StaticText {text: "px"}');
 
         dlg.prevQual = this._addQualControl(dlg.settPnl, {en: 'JPEG quality:', ru: 'Качество:'}, '75');
 
@@ -566,10 +580,12 @@ CParam.prototype = {
         }
     },
 
-    resize: function(doc/*, mode, offset*/)
+    resize: function(doc, textFieldHeight/*, mode, offset*/)
     {
         if (!doc || this.dim == 0)
             return;
+            
+        textFieldHeight = textFieldHeight || 0;
 
         var newWidth = null;
         var newHeight = null;
@@ -610,6 +626,10 @@ CParam.prototype = {
 
         if (newHeight != null && offset.height != null && newHeight - offset.height > 0)
             newHeight -= offset.height;*/
+        
+        // пытаемся оставлять зазор для текста                                      // todo: разобраться, что делать, если меняется ширина
+        if (newHeight != null)
+            newHeight = Math.round(newHeight - textFieldHeight);
 
         if ((newWidth == null || newWidth != null && newWidth < doc.width) && (newHeight == null || newHeight!= null && newHeight < doc.height))
             doc.resizeImage(newWidth, newHeight, undefined, ResampleMethod.BICUBIC);
@@ -711,7 +731,7 @@ CImageProcessor.prototype = {
             var item = new LogItem();
             if (this._param) {
                 var state = doc.activeHistoryState;
-                this._processImage(doc, file, this._param, item, true, text, this._psd);
+                this._processImage(doc, file, this._param, item, true, text.trim(), this._psd);
                 doc.activeHistoryState = state;
             }
             if (this._prevParam)
@@ -731,14 +751,15 @@ CImageProcessor.prototype = {
             doc.bitsPerChannel = BitsPerChannelType.EIGHT;
 
         var pos = Number(doc.height);
-        doc.resizeCanvas(null, Math.round(pos + param.textHeight * 3 / 2), AnchorPosition.TOPLEFT);
+        var field = this._textFieldParams(param);     
+        doc.resizeCanvas(null, Math.round(pos + field.height), AnchorPosition.TOPLEFT);
         doc.resizeImage(null, null, newDpi, ResampleMethod.NONE);
 
         var artLayerRef = doc.artLayers.add();
         artLayerRef.kind = LayerKind.TEXT;
         var textItemRef = artLayerRef.textItem;
 
-        textItemRef.position = [0, Math.round(pos + param.textHeight * 1.1)];
+        textItemRef.position = [0, Math.round(pos + field.pos)];
 
         var uv = new UnitValue(param.textHeight, 'px');
         uv.baseUnit = UnitValue(1 / newDpi, 'in');					// todo а почему 300 dpi?
@@ -750,19 +771,31 @@ CImageProcessor.prototype = {
         textItemRef.contents = text;
     },
 
+    _textFieldParams: function(param) {
+        if (!param || param.textHeight <=0)
+            return {pos: 0, height: 0};
+            
+        return {
+            pos: param.textHeight * 1.1,
+            height: param.textHeight * 3 / 2
+            };        
+    },
+
     _processImage: function (doc, file, param, logItem, save, text, psd) {
-        var fname = file.fullName.slice(0, file.fullName.lastIndexOf('.'));
+        //var fname = file.fullName.slice(0, file.fullName.lastIndexOf('.'));
         var logname = file.fsName.slice(0, file.fsName.lastIndexOf('.'));
 
-        param.resize(doc);
-
         var hasText = save && (text || '') != '' && param.textHeight > 0;
+        var pos = this._textFieldParams(param);
+        param.resize(doc, hasText ? pos.height : 0);
+
+        
         if (hasText)
             this._addText(doc, param, text);
 
         var ext = psd && save ? '.psd' : '.jpg';
 //		alert(fname + param.suffix + ext);
-        var outFile = new File(fname + param.suffix + ext);
+        var outFile = new File(logname + param.suffix + ext);
 
         param.save(doc, outFile, save, psd);
 
@@ -793,13 +826,14 @@ LogItem.prototype = {
     addMain: function(src, alt)
     {
         this.src = src || '';
-        this.alt = alt || '';
+        this.alt = (alt || '').trim();
 
         var r = /^Фото [\d.]+\s*/gi;
         var res = r.exec(this.alt);
 
         this.altTitle =  res? (res[0] || res ) : '';
-        this.text = this.alt.substr(this.altTitle.length);
+        this.altTitle = this.altTitle.trim();
+        this.text = this.alt.substr(this.altTitle.length).trim();
     },
 
     addPreview: function(src, width, height)
@@ -840,7 +874,7 @@ LogItem.prototype = {
 
         var alt = this.alt != '' ? ('\n\t\t\t<br>' + String.toHTML(this.alt)) : '';
 
-        return '<table class="img" style="margin: auto;">\n\t<tr>\n\t\t<td>\n\t\t\t' + head + res + tail + alt + '\n\t\t</td>\n\t</tr>\n</table>';
+        return '<table class="img" style="margin: auto;"><tbody>\n\t<tr><td>\n\t\t\t' + head + res + tail + alt + '\n\t</td></tr>\n</tbody></table>';
     },
 
     imageListItem: function(logPath, pathLen)
@@ -848,7 +882,7 @@ LogItem.prototype = {
         if (this.alt == '' || this.src == '')
             return null;
 
-        return String.format('{0}<a href="{1}" target="_blank">{2}</a>', String.toHTML(this.altTitle), this._relativePath(this.src, logPath, pathLen), String.toHTML(this.text));
+        return String.format('{0} <a href="{1}" target="_blank">{2}</a>', String.toHTML(this.altTitle), this._relativePath(this.src, logPath, pathLen), String.toHTML(this.text));
     },
 
     purikovItem: function()
