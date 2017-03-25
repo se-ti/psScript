@@ -82,7 +82,6 @@ CDialog =  function() {
 
     };
 
-    this.addWestraMarkup = true;
     this.srcFolder = null;
 
     var val = $.getenv(this._consts.envVar);
@@ -110,6 +109,7 @@ CDialog.prototype = {
             dlg.logFile = File.openDialog(title, filter);
 
         this._setPathText(dlg.logpath, dlg.logFile);
+        dlg.useWestra.enabled = dlg.logFile != null;
     },
 
     chooseFolder: function() {
@@ -310,7 +310,7 @@ CDialog.prototype = {
         dlg.logFile.write(out.join('<br/>\n'));
         dlg.logFile.write('<br/><br/>\n\n');
         
-        if (this.addWestraMarkup && out2.length > 0)
+        if (dlg.useWestra.value && out2.length > 0)
         {
             dlg.logFile.write('[[$ReportPhotoHeader]]\n');
             dlg.logFile.write('<div class="zoom-gallery">\n\t');
@@ -498,6 +498,10 @@ CDialog.prototype = {
         dlg.logpath = dlg.row7.add('EditText', undefined, '', {readonly: true, borderless: true});
         dlg.logpath.characters = 50;
         dlg.log.onClick = $cd(this, this.chooseFile);
+
+        dlg.useWestra = dlg.add('checkbox', undefined, {en: 'Add westra markup', ru: 'Разметка для Вестры'});
+        dlg.useWestra.value = false;
+        dlg.useWestra.enabled = false;
 
         dlg.btnPnl = dlg.add('group');
         dlg.btnPnl.alignment = 'center';
