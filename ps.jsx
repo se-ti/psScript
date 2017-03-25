@@ -9,7 +9,7 @@
 #target photoshop
 #script "Preview builder"
 
-$.level = 2;
+//$.level = 2;
 //$.locale = 'ru';
 $.localize = true; // автолокализация
 
@@ -18,8 +18,9 @@ $.localize = true; // автолокализация
 * высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
 * output folder
-* -- переделать layout на xml
+* --+ переделать layout на xml
 * -+ запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv   -- пока работает только пока не перезапустишь фотошоп
+галочка "верстка под вестру"?
 
 * ++ галочку для отключения ресайза и добавления текста
 * ++ автоматически подтягивать единственный txt файл в папке
@@ -82,7 +83,6 @@ CDialog =  function() {
 
     };
 
-    this.addWestraMarkup = true;
     this.srcFolder = null;
 
     var val = $.getenv(this._consts.envVar);
@@ -110,6 +110,8 @@ CDialog.prototype = {
             dlg.logFile = File.openDialog(title, filter);
 
         this._setPathText(dlg.logpath, dlg.logFile);
+		
+		dlg.useWestra.enabled = dlg.logFile != null;
     },
 
     chooseFolder: function() {
@@ -174,16 +176,7 @@ CDialog.prototype = {
 
     _canStart: function() {
         this.dlg.btnPnl.buildBtn.enabled = this.srcFolder != null && (this.dlg.main.value || this.dlg.preview.value);
-    },
-
-    _canAddText: function () {
-        var c = this.dlg;
-        var val = c.main.value && ((c.desc.text || '') != '');
-        c.addText.enabled = val;
-        val = val && c.addText.value;
-        c.textHeight.enabled = val;
-        c.font.enabled = val;
-    },
+    },    
 
     _onMainChange: function(e) {
         var c = this.dlg;
@@ -310,7 +303,7 @@ CDialog.prototype = {
         dlg.logFile.write(out.join('<br/>\n'));
         dlg.logFile.write('<br/><br/>\n\n');
         
-        if (this.addWestraMarkup && out2.length > 0)
+        if (dlg.useWestra.value && out2.length > 0)
         {
             dlg.logFile.write('[[$ReportPhotoHeader]]\n');
             dlg.logFile.write('<div class="zoom-gallery">\n\t');
@@ -498,6 +491,10 @@ CDialog.prototype = {
         dlg.logpath = dlg.row7.add('EditText', undefined, '', {readonly: true, borderless: true});
         dlg.logpath.characters = 50;
         dlg.log.onClick = $cd(this, this.chooseFile);
+		
+		dlg.useWestra = dlg.ctrlPnl.add('checkbox', undefined, {en: 'Include all subfolders', ru: 'Включая все подпапки'});
+        dlg.useWestra.value = false;
+		
 
         dlg.btnPnl = dlg.add('group');
         dlg.btnPnl.alignment = 'center';
@@ -528,6 +525,145 @@ CDialog.prototype = {
         size: {en: 'Reference size:', ru: 'Размер:'}
     }
 };
+
+function CParamControl(root, full) {
+	
+	this._c = {
+		root: root,
+		panel: null,
+		suffix: null,
+		resize: null,
+		dim: null,
+		psd: null,
+		qual: null,
+
+		addText: null,
+		font: null,
+		textHeight: null
+	};
+	
+	this._enabled = false;
+	this._full = full || false;	
+	
+	this._d_resize = $cd(this, this._onResize);
+	this._buildIn(root);
+}
+
+CParamControl.prototype = {
+	
+	_buildIn: function() {
+		var c = this._c;
+		
+		c.panel = c.root.add('panel', undefined, '');
+        c.panel.alignChildren = 'left';
+		
+		c.suffix = this._addSuffixControl(panel, '_r');
+		
+		var r = dlg.TransformPnl.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, ''));
+        c.resize = r.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
+        c.resize.value = true;
+        c.resize.onClick = this._d_resize;
+		
+		r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
+        c.dim = r.add('EditText', undefined, this._full ? '1000' : '350');
+        c.dim.characters = 6;
+        c.dim.minvalue = 1;
+        r.add('StaticText {text: "px"}');
+		
+		if (this._full) {
+			r = dlg.TransformPnl.add('group');
+			this._adjustStatic(r.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
+			c.psd = r.add('dropdownlist', undefined, ['JPEG', 'PSD']);
+			c.psd.selection = 0;
+			c.psd.onChange = $cd(this, this._onPsdChange);
+		}
+
+        c.qual = this._addQualControl(c.panel, {en: 'Quality:', ru: 'Качество:'}, this._full ? '100' : '75');
+		
+		if (!this._full)
+			return;
+		
+		r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, ''));
+        c.addText = r.add('checkbox', undefined, {en: 'Add text', ru: 'Добавить подпись'});
+        c.addText.value = true;
+        c.addText.onClick = $cd(this, this._canAddText);
+
+        r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
+        c.textHeight = r.add('EditText', undefined, '29');
+        c.textHeight.characters = 6;
+
+        r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
+        c.font = r.add('dropdownlist', undefined);
+
+        var  selIndex = null;
+        for (var i = 0; i < app.fonts.length; i++)
+        {
+            var name = app.fonts[i].name;
+            if (selIndex == null && name == 'Calibri' || name == 'Century Gothic')
+                selIndex = i;
+
+            c.font.add('item', app.fonts[i].name);
+        }
+        c.font.selection = selIndex || 0;
+
+        var t = this;
+        dlg.textHeight.onChange = function() {c.font.enabled = t._limit(c.textHeight, 4, 0, 96) > 0; };		
+	},
+	
+	_onResize: function() {
+		this._c.dim.enabled = this._enabled && this._c.resize.value;
+	},
+
+	setEnabled: function(value) {
+		this._enabled = value;
+	},
+	
+	enabled: function() {
+		return this._enabled;
+	},
+
+    getParam: function() {		
+		var c = this._c;
+		
+		var qual = this._limit(c.qual, this._full ? 100 : 75, 0, 100);
+		if (this._full)
+			qual = Math.round(qual * 12 / 100);
+		
+        var dim = c.resize.value ? this._limit(c.dim, this._full? 1000 : 350, 1, null): 0;
+		var mode = CParam.prototype.ResizeMode.minSide : CParam.prototype.ResizeMode.height;
+		
+		var param = new CParam(dim, qual, c.suffix.text || '', mode);
+		
+		if (c.font.selection != null) {
+            param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
+            param.textHeight = c.addText.value ? this._limit(c.textHeight, 29, 0, 96) : 0;
+        }
+		
+		return param;		
+	}
+	
+	isPsd: function() {
+		return this._c.psd && c.psd.selection.index == 1;
+	},
+	
+	_canAddText: function () {
+		if (!this._full)
+			return;
+		
+        var c = this._c;
+        var val = this._enabled && ((c.desc.text || '') != '');
+        
+		c.addText.enabled = val;
+        val = val && c.addText.value;
+        c.textHeight.enabled = val;
+        c.font.enabled = val;
+    }
+}
 
 function CParam(dim, qual, suffix, mode) {
     this.dim = dim;
@@ -896,7 +1032,7 @@ LogItem.prototype = {
         if (pos >= 0)
             name = name.substring(0, pos);
 
-        return String.format('[[$ReportPhoto? &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
+        return String.format('<ins id="f"/>[[$ReportPhoto? &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
     }
 };
 
