@@ -9,7 +9,7 @@
 #target photoshop
 #script "Preview builder"
 
-$.level = 2;
+//$.level = 2;
 //$.locale = 'ru';
 $.localize = true; // автолокализация
 
@@ -18,9 +18,10 @@ $.localize = true; // автолокализация
 * высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
 * output folder
-* -- переделать layout на xml
+* --+ переделать layout на xml
 * -+ запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv   -- пока работает только пока не перезапустишь фотошоп
 
+* ++ галочка "верстка под вестру"?
 * ++ галочку для отключения ресайза и добавления текста
 * ++ автоматически подтягивать единственный txt файл в папке
 * ++ filenames with spaces -- просто возьми в кавычки
@@ -109,7 +110,8 @@ CDialog.prototype = {
             dlg.logFile = File.openDialog(title, filter);
 
         this._setPathText(dlg.logpath, dlg.logFile);
-        dlg.useWestra.enabled = dlg.logFile != null;
+		
+		dlg.useWestra.enabled = dlg.logFile != null;
     },
 
     chooseFolder: function() {
@@ -172,71 +174,22 @@ CDialog.prototype = {
         }
     },
 
+    _canAddText: function() {
+        this.main.canAddText((this.dlg.desc.text||'') != '');
+    },
+
     _canStart: function() {
         this.dlg.btnPnl.buildBtn.enabled = this.srcFolder != null && (this.dlg.main.value || this.dlg.preview.value);
-    },
-
-    _canAddText: function () {
-        var c = this.dlg;
-        var val = c.main.value && ((c.desc.text || '') != '');
-        c.addText.enabled = val;
-        val = val && c.addText.value;
-        c.textHeight.enabled = val;
-        c.font.enabled = val;
-    },
+    },    
 
     _onMainChange: function(e) {
-        var c = this.dlg;
-        var val = c.main.value;
-
-        c.resize.enabled = val;
-        c.qual.enabled = val && c.psd.selection.index != 1;
-        c.suffix.enabled = val;
-        c.psd.enabled = val;
-        this._canAddText();
-
-        this._onResizeChange();
+        this.main.setEnabled(this.dlg.main.value);
         this._canStart();
     },
 
     _onPreviewChange: function (e) {
-        var c = this.dlg;
-        var val = c.preview.value;
-
-        c.resizePrev.enabled = val;
-        c.prevQual.enabled = val;
-        c.prevSuffix.enabled = val;
-
-        this._onResizePreviewChange();
+        this.preview.setEnabled(this.dlg.preview.value);
         this._canStart();
-    },
-
-    _onPsdChange: function (e) {
-        this.dlg.qual.enabled = this.dlg.main.value && this.dlg.psd.selection.index != 1;
-    },
-
-    _onResizeChange: function(e) {
-        var c = this.dlg;
-        c.refDim.enabled = c.main.value && c.resize.value;
-    },
-
-    _onResizePreviewChange: function(e) {
-        var c = this.dlg;
-        c.prevRefDim.enabled = c.preview.value && c.resizePrev.value;
-    },
-
-    _limit: function(control, defval, min, max) {
-        var res = Number(control.text);
-        if (isNaN(res))
-            res = defval;
-
-        if (max != null)
-            res = Math.min(res, max);
-        if (min != null)
-            res = Math.max(res, min);
-        control.text = res;
-
-        return res;
     },
 
     start: function() {
@@ -244,45 +197,48 @@ CDialog.prototype = {
         if (app._isRunning)
             return;
 
-        var c = this.dlg;
-        var qual = this._limit(c.qual, 100, 0, 100);
-        var dim = c.resize.value ? this._limit(c.refDim, 1000, 1, null): 0;
-        var param = c.main.value ? new CParam(dim, Math.round(qual * 12 / 100), c.suffix.text || '', CParam.prototype.ResizeMode.minSide) : null;
-
-        qual = this._limit(c.prevQual, 75, 0, 100);
-        dim = c.resizePrev.value ? this._limit(c.prevRefDim, 200, 1, null) : 0;
-        var prevParam = c.preview.value ? new CParam(dim, qual, c.prevSuffix.text || '', CParam.prototype.ResizeMode.height) : null;    // CParam.prototype.ResizeMode.refSize
-
-        if (c.font.selection != null) {
-            param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
-            param.textHeight = c.addText.value ? this._limit(c.textHeight, 29, 0, 96) : 0;
-        }
-
-        var originalUnit = app.preferences.rulerUnits;
-        var orgTypeUnit = app.preferences.typeUnits;
-        var orgColor = app.backgroundColor;
-        var bkCol = new SolidColor();
-        bkCol.rgb = new RGBColor();
-
-        preferences.rulerUnits = Units.PIXELS;
-        preferences.typeUnits = TypeUnits.PIXELS;
-
-        app.backgroundColor = bkCol;
+        var state = this._updatePSState();
 
         app._isRunning = true;
+        var c = this.dlg;
         c.btnPnl.buildBtn.text = this._L.interrupt;
 
-        var processor = new CImageProcessor(c.recursive.value, param, prevParam, c.psd.selection.index == 1);
+        var param  = c.main.value ?  this.main.getParam() : null;
+        var prevParam  = c.preview.value ?  this.preview.getParam() : null;
+        var processor = new CImageProcessor(c.recursive.value, param, prevParam,  this.main.isPsd());
         var logArr = processor.process(this.srcFolder, c.desc.text, function() { return app.breakProcess;} );
 
         if (c.logFile)
             this.writeLog(c.logFile, logArr);
+
         app._isRunning = false;
         c.btnPnl.buildBtn.text = this._L.build;
 
-        app.preferences.rulerUnits = originalUnit;
-        app.preferences.typeUnits = orgTypeUnit;
-        app.backgroundColor = orgColor;
+        this._restorePSState(state);
+    },
+
+    _updatePSState: function() {
+
+        var res = {
+            originalUnit: app.preferences.rulerUnits,
+            orgTypeUnit: app.preferences.typeUnits,
+            orgColor: app.backgroundColor
+        };
+
+        var bkCol = new SolidColor();
+        bkCol.rgb = new RGBColor();
+        app.backgroundColor = bkCol;
+
+        preferences.rulerUnits = Units.PIXELS;
+        preferences.typeUnits = TypeUnits.PIXELS;
+
+        return res;
+    },
+
+    _restorePSState: function(state) {
+        app.preferences.rulerUnits = state.originalUnit;
+        app.preferences.typeUnits = state.orgTypeUnit;
+        app.backgroundColor = state.orgColor;
         docRef = null;
     },
 
@@ -322,6 +278,276 @@ CDialog.prototype = {
         dlg.logFile.close();
     },
 
+    _initGUI: function() {
+        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.4.3');
+        this.dlg = dlg;
+
+        dlg.alignChildren = 'fill';
+
+        dlg.ctrlPnl = dlg.add('panel', undefined, {en: 'Source folder', ru: 'Папка с изображениями'});
+
+        dlg.ctrlPnl.alignChildren = 'left';
+        dlg.srcGrp = dlg.ctrlPnl.add('group');
+
+        dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});
+        dlg.path.characters = 40;
+        dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
+
+        if (this._lastPath)
+            dlg.path.text = File(this._lastPath).fsName;
+
+        dlg.browseBtn = dlg.srcGrp.add('button', undefined, {en: 'Browse...', ru: 'Обзор...'});
+        dlg.browseBtn.onClick = $cd(this, this.chooseFolder);
+
+        dlg.recursive = dlg.ctrlPnl.add('checkbox', undefined, {en: 'Include all subfolders', ru: 'Включая все подпапки'});
+        dlg.recursive.value = false;
+
+        dlg.trow1 = dlg.ctrlPnl.add('group');
+        var st = dlg.trow1.add('StaticText', undefined, {en: 'Descriptions:', ru: 'Описания:'});
+        st.justify = "right";
+        st.size = [92, 14];
+
+        dlg.desc = dlg.trow1.add('EditText', undefined, 'photo.txt');
+        dlg.desc.characters = 15;
+        dlg.desc.onChange = $cd(this, this._canAddText);
+
+        // dst folder
+
+        /*dlg.dest = dlg.add('panel', undefined, 'Destination folder');
+        dlg.dest.alignChildren = 'left';
+        dlg.dstGrp = dlg.dest.add('group');
+        dlg.dstPath = dlg.dstGrp.add('EditText', undefined, '');
+        dlg.dstPath.characters = 40;
+        dlg.browseBtn2 = dlg.dstGrp.add('button', undefined, 'Choose...');
+        dlg.browseBtn2.onClick = $cd(this, this.chooseFolder);
+        */
+
+        /*******************************************************/
+
+        var rs = 'Group { align: "fill", alignChildren: "top",' +
+                'col1: Group {orientation: "column", alignChildren: "left", align: "left"},' +
+                'col2: Group {orientation: "column", alignChildren: "left", align: "right"}' +
+            '}';
+        var r =  dlg.add(rs);
+
+        rs = 'Checkbox { align: "left", value:"true", text: "' + localize({en: 'Generate main', ru: 'Создать основные'}) + '"}';
+        dlg.main = r.col1.add(rs);
+        dlg.main.onClick = $cd(this, this._onMainChange);
+        this.main = new CParamControl(r.col1, true);
+
+        rs = 'Checkbox { align: "left", value:"false", text: "' + localize({en: 'Generate preview', ru: 'Создать превью'}) + '"}';
+        dlg.preview = r.col2.add(rs);
+        dlg.preview.onClick = $cd(this, this._onPreviewChange);
+        this.preview = new CParamControl(r.col2, false);
+
+        /*******************************************************/
+
+
+        dlg.row7 = dlg.add('group'); //settPnl.
+        dlg.log = dlg.row7.add('Button', undefined, {en: 'HTML log file...', ru: 'HTML лог-файл...'});
+        dlg.logpath = dlg.row7.add('EditText', undefined, '', {readonly: true, borderless: true});
+        dlg.logpath.characters = 50;
+        dlg.log.onClick = $cd(this, this.chooseFile);
+		
+		dlg.useWestra = dlg.add('checkbox', undefined, {en: 'Add westra markup', ru: 'Разметка для Вестры'});
+        dlg.useWestra.value = false;
+        dlg.useWestra.enabled = false;
+		
+
+        dlg.btnPnl = dlg.add('group');
+        dlg.btnPnl.alignment = 'center';
+        dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, this._L.build, {name: 'ok'});
+        dlg.btnPnl.buildBtn.enabled = false;
+        dlg.btnPnl.cancelBtn = dlg.btnPnl.add('button', undefined, {en: 'Cancel', ru: 'Отменить'}, {name: 'cancel'});
+
+        dlg.btnPnl.buildBtn.onClick = $cd(this, this.start);
+        dlg.btnPnl.cancelBtn.onClick = function () {
+            app.breakProcess = true;
+            dlg.close();
+        };
+
+        this._onMainChange();
+        this._onPreviewChange();
+
+        this._canAddText();
+        this._canStart();
+        return dlg;
+    },
+
+     show: function() {
+         this._initGUI();
+         this.dlg.show();
+     },
+
+    _L: {	/*локализация*/
+        build: {en: 'Build', ru: 'Запустить'},
+        interrupt: {en: 'Break', ru: 'Прервать'},
+    }
+};
+
+function CParamControl(root, full) {
+	
+	this._c = {
+		root: root,
+		panel: null,
+		suffix: null,
+		resize: null,
+		dim: null,
+		psd: null,
+		qual: null,
+
+		addText: null,
+		font: null,
+		textHeight: null
+	};
+	
+	this._enabled = false;
+	this._full = full || false;
+    this._hasText = false;
+	
+	this._d_resize = $cd(this, this._onResize);
+	this._d_psdChange = $cd(this, this._onPsdChange);
+    this._d_canAddText = $cd(this, this._canAddText);
+
+	this._buildIn(root);
+}
+
+CParamControl.prototype = {
+
+    _L: {	/*локализация*/
+        suffix: {en: 'Suffix:', ru: 'Суффикс:'},
+        size: {en: 'Reference size:', ru: 'Размер:'}
+    },
+	
+	_buildIn: function() {
+		var c = this._c;
+		
+		c.panel = c.root.add('panel', undefined, '');
+        c.panel.alignChildren = 'left';
+		
+		c.suffix = this._addSuffixControl(c.panel, this._full ? '_r' : '_prev');
+		
+		var r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, ''));
+        c.resize = r.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
+        c.resize.value = true;
+        c.resize.onClick = this._d_resize;
+		
+		r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
+        c.dim = r.add('EditText', undefined, this._full ? '1000' : '350');
+        c.dim.characters = 6;
+        c.dim.minvalue = 1;
+        r.add('StaticText {text: "px"}');
+		
+		if (this._full) {
+			r = c.panel.add('group');
+			this._adjustStatic(r.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
+			c.psd = r.add('dropdownlist', undefined, ['JPEG', 'PSD']);
+			c.psd.selection = 0;
+			c.psd.onChange = this._d_psdChange;
+		}
+
+		var cap = this._full ? {en: 'Quality:', ru: 'Качество:'} : {en: 'JPEG quality:', ru: 'Качество:'};
+        c.qual = this._addQualControl(c.panel, cap, this._full ? '100' : '75');
+		
+		if (!this._full)
+			return;
+		
+		r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, ''));
+        c.addText = r.add('checkbox', undefined, {en: 'Add text', ru: 'Добавить подпись'});
+        c.addText.value = true;
+        c.addText.onClick = this._d_canAddText;
+
+        r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
+        c.textHeight = r.add('EditText', undefined, '29');
+        c.textHeight.characters = 6;
+
+        r = c.panel.add('group');
+        this._adjustStatic(r.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
+        c.font = r.add('dropdownlist', undefined);
+
+        var  selIndex = null;
+        for (var i = 0; i < app.fonts.length; i++)
+        {
+            var name = app.fonts[i].name;
+            if (selIndex == null && name == 'Calibri' || name == 'Century Gothic')
+                selIndex = i;
+
+            c.font.add('item', app.fonts[i].name);
+        }
+        c.font.selection = selIndex || 0;
+
+        var t = this;
+        c.textHeight.onChange = function() {c.font.enabled = t._limit(c.textHeight, 4, 0, 96) > 0; };
+	},
+	
+	_onResize: function() {
+		this._c.dim.enabled = this._enabled && this._c.resize.value;
+	},
+
+	setEnabled: function(value) {
+		this._enabled = value;
+
+		var c = this._c;
+        c.resize.enabled = value;
+        c.qual.enabled = value && !this.isPsd();
+        c.suffix.enabled = value ;
+
+        if (this._full)
+            c.psd.enabled = value;
+        this._onResize();
+        this._canAddText();
+	},
+	
+	enabled: function() {
+		return this._enabled;
+	},
+
+    getParam: function() {		
+		var c = this._c;
+		
+		var qual = this._limit(c.qual, this._full ? 100 : 75, 0, 100);
+		if (this._full)
+			qual = Math.round(qual * 12 / 100);
+		
+        var dim = c.resize.value ? this._limit(c.dim, this._full? 1000 : 350, 1, null): 0;
+		var mode = this._full ? CParam.prototype.ResizeMode.minSide : CParam.prototype.ResizeMode.height;
+		
+		var param = new CParam(dim, qual, c.suffix.text || '', mode);
+		
+		if (this._full && c.font.selection != null) {
+            param.font = app.fonts[c.font.selection.index]; //.getByName(c.font.selection.text);
+            param.textHeight = c.addText.value ? this._limit(c.textHeight, 29, 0, 96) : 0;
+        }
+		
+		return param;		
+	},
+	
+	isPsd: function() {
+		return this._c.psd && this._c.psd.selection.index == 1;
+	},
+
+    canAddText: function(val) {
+       this._hasText = val || false;
+       this._canAddText();
+    },
+
+	_canAddText: function() {
+		if (!this._full)
+			return;
+		
+        var c = this._c;
+        var val = this._enabled && this._hasText;
+        
+		c.addText.enabled = val;
+        val = val && c.addText.value;
+        c.textHeight.enabled = val;
+        c.font.enabled = val;
+    },
+
     _adjustStatic: function (st) {
         if (st) {
             st.size = [92, 14];
@@ -346,192 +572,24 @@ CDialog.prototype = {
         return parent.add(rs).ed;
     },
 
-    _initGUI: function() {
-        var dlg = new Window(BridgeTalk.appName == "photoshop" ? 'dialog' : 'palette', 'Preview Builder v 0.4.0');
-        this.dlg = dlg;
+    _limit: function(control, defval, min, max) {
+        var res = Number(control.text);
+        if (isNaN(res))
+            res = defval;
 
-        dlg.alignChildren = 'fill';
+        if (max != null)
+            res = Math.min(res, max);
+        if (min != null)
+            res = Math.max(res, min);
+        control.text = res;
 
-
-        dlg.ctrlPnl = dlg.add('panel', undefined, {en: 'Source folder', ru: 'Папка с изображениями'});
-
-        dlg.ctrlPnl.alignChildren = 'left';
-        dlg.srcGrp = dlg.ctrlPnl.add('group');
-
-        dlg.path = dlg.srcGrp.add('editText', undefined, ''); //, {readonly: false, borderless: true});
-        dlg.path.characters = 40;
-        dlg.path.onChange = $cd(this, this._onSrcFolderChanged);
-
-        if (this._lastPath)
-            dlg.path.text = File(this._lastPath).fsName;
-
-        dlg.browseBtn = dlg.srcGrp.add('button', undefined, {en: 'Browse...', ru: 'Обзор...'});
-        dlg.browseBtn.onClick = $cd(this, this.chooseFolder);
-
-        dlg.recursive = dlg.ctrlPnl.add('checkbox', undefined, {en: 'Include all subfolders', ru: 'Включая все подпапки'});
-        dlg.recursive.value = false;
-
-        dlg.trow1 = dlg.ctrlPnl.add('group');
-        this._adjustStatic(dlg.trow1.add('StaticText', undefined, {en: 'Descriptions:', ru: 'Описания:'}));
-        dlg.desc = dlg.trow1.add('EditText', undefined, 'photo.txt');
-        dlg.desc.characters = 15;
-        dlg.desc.onChange = $cd(this, this._canAddText);
-
-        // dst folder
-
-        /*dlg.dest = dlg.add('panel', undefined, 'Destination folder');
-        dlg.dest.alignChildren = 'left';
-        dlg.dstGrp = dlg.dest.add('group');
-        dlg.dstPath = dlg.dstGrp.add('EditText', undefined, '');
-        dlg.dstPath.characters = 40;
-        dlg.browseBtn2 = dlg.dstGrp.add('button', undefined, 'Choose...');
-        dlg.browseBtn2.onClick = $cd(this, this.chooseFolder);
-        */
-
-
-        dlg.trow2 = dlg.add('group');
-        dlg.trow2.align = 'fill';
-        dlg.trow2.alignChildren = 'top';
-
-        dlg.col1 = dlg.trow2.add('group');
-        dlg.col1.orientation = 'column';
-        dlg.col1.alignChildren = 'left';
-        dlg.col1.align = 'left';
-        dlg.col2 = dlg.trow2.add('group');
-        dlg.col2.orientation = 'column';
-        dlg.col2.align = 'right';
-        dlg.col2.alignChildren = 'left';
-
-        /*******************************************************/
-        dlg.main = dlg.col1.add('checkbox', undefined, {en: 'Generate main', ru: 'Создать основные'});
-        dlg.main.align = 'left';
-        dlg.main.value = true;
-        dlg.main.onClick = $cd(this, this._onMainChange);
-
-        dlg.TransformPnl = dlg.col1.add('panel', undefined, '');
-        dlg.TransformPnl.alignChildren = 'left';
-        //dlg.TransformPnl.orientation = 'row';
-
-        dlg.suffix = this._addSuffixControl(dlg.TransformPnl, '_r');
-
-        dlg.row_0 = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row_0.add('StaticText', undefined, ''));
-        dlg.resize = dlg.row_0.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
-        dlg.resize.value = true;
-        dlg.resize.onClick = $cd(this, this._onResizeChange);
-
-        dlg.row0 = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row0.add('StaticText', undefined, {en: 'Reference size:', ru: 'Размер:'}));
-        dlg.refDim = dlg.row0.add('EditText', undefined, '1000');
-        dlg.refDim.characters = 6;
-        dlg.refDim.minvalue = 1;
-        dlg.row0.add('StaticText {text: "px"}');
-
-        dlg.row3 = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row3.add('StaticText', undefined, {en: 'Save as:', ru: 'Тип:'}));
-        dlg.psd = dlg.row3.add('dropdownlist', undefined, ['JPEG', 'PSD']);
-        dlg.psd.selection = 0;
-        dlg.psd.onChange = $cd(this, this._onPsdChange);
-
-        dlg.qual = this._addQualControl(dlg.TransformPnl, {en: 'Quality:', ru: 'Качество:'}, '100');
-
-        dlg.row4__ = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row4__.add('StaticText', undefined, ''));
-        dlg.addText = dlg.row4__.add('checkbox', undefined, {en: 'Add text', ru: 'Добавить подпись'});
-        dlg.addText.value = true;
-        dlg.addText.onClick = $cd(this, this._canAddText);
-
-        dlg.row4_ = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row4_.add('StaticText', undefined, {en: 'Font size:', ru: 'Размер шрифта:'}));
-        dlg.textHeight = dlg.row4_.add('EditText', undefined, '29');
-        dlg.textHeight.characters = 6;
-
-        dlg.row5_ = dlg.TransformPnl.add('group');
-        this._adjustStatic(dlg.row5_.add('StaticText', undefined, {en: 'Font name:', ru: 'Шрифт:'}));
-        dlg.font = dlg.row5_.add('dropdownlist', undefined);
-
-        var  selIndex = null;
-        for (var i = 0; i < app.fonts.length; i++)
-        {
-            var name = app.fonts[i].name;
-            if (selIndex == null && name == 'Calibri' || name == 'Century Gothic')
-                selIndex = i;
-
-            dlg.font.add('item', app.fonts[i].name);
-        }
-        dlg.font.selection = selIndex || 0;
-
-        var t = this;
-        dlg.textHeight.onChange = function() {t.dlg.font.enabled = t._limit(t.dlg.textHeight, 4, 0, 96) > 0; };
-
-        /*******************************************************/
-
-        dlg.preview = dlg.col2.add('checkbox', undefined, {en: 'Generate preview', ru: 'Создать превью'});
-        dlg.preview.value = false;
-        dlg.preview.onClick = $cd(this, this._onPreviewChange);
-
-        dlg.settPnl = dlg.col2.add('panel', undefined, '');
-        dlg.settPnl.alignChildren = 'left';
-
-        dlg.prevSuffix = this._addSuffixControl(dlg.settPnl, '_prev');
-
-        dlg.row_0_ = dlg.settPnl.add('group');
-        this._adjustStatic(dlg.row_0_.add('StaticText', undefined, ''));
-        dlg.resizePrev = dlg.row_0_.add('checkbox', undefined, {en: 'Resize', ru: 'Изменить размер'});
-        dlg.resizePrev.value = true;
-        dlg.resizePrev.onClick = $cd(this, this._onResizePreviewChange);
-
-        dlg.row4 = dlg.settPnl.add('group');
-        this._adjustStatic(dlg.row4.add('StaticText', undefined, this._L.size));
-        dlg.prevRefDim = dlg.row4.add('EditText', undefined, '200');
-        dlg.prevRefDim.characters = 6;
-        dlg.prevRefDim.minvalue = 1;
-        dlg.row4.add('StaticText {text: "px"}');
-
-        dlg.prevQual = this._addQualControl(dlg.settPnl, {en: 'JPEG quality:', ru: 'Качество:'}, '75');
-
-        /*******************************************************/
-
-
-        dlg.row7 = dlg.add('group'); //settPnl.
-        dlg.log = dlg.row7.add('Button', undefined, {en: 'HTML log file...', ru: 'HTML лог-файл...'});
-        dlg.logpath = dlg.row7.add('EditText', undefined, '', {readonly: true, borderless: true});
-        dlg.logpath.characters = 50;
-        dlg.log.onClick = $cd(this, this.chooseFile);
-
-        dlg.useWestra = dlg.add('checkbox', undefined, {en: 'Add westra markup', ru: 'Разметка для Вестры'});
-        dlg.useWestra.value = false;
-        dlg.useWestra.enabled = false;
-
-        dlg.btnPnl = dlg.add('group');
-        dlg.btnPnl.alignment = 'center';
-        dlg.btnPnl.buildBtn = dlg.btnPnl.add('button', undefined, this._L.build, {name: 'ok'});
-        dlg.btnPnl.buildBtn.enabled = false;
-        dlg.btnPnl.cancelBtn = dlg.btnPnl.add('button', undefined, {en: 'Cancel', ru: 'Отменить'}, {name: 'cancel'});
-
-        dlg.btnPnl.buildBtn.onClick = $cd(this, this.start);
-        dlg.btnPnl.cancelBtn.onClick = function () {
-            app.breakProcess = true;
-            dlg.close();
-        };
-
-        this._onMainChange();
-        this._onPreviewChange();
-        return dlg;
+        return res;
     },
 
-     show: function() {
-         this._initGUI();
-         this.dlg.show();
-     },
-
-    _L: {	/*локализация*/
-        build: {en: 'Build', ru: 'Запустить'},
-        interrupt: {en: 'Break', ru: 'Прервать'},
-        suffix: {en: 'Suffix:', ru: 'Суффикс:'},
-        size: {en: 'Reference size:', ru: 'Размер:'}
+    _onPsdChange: function (e) {
+        this._c.qual.enabled = this._enabled && !this.isPsd();
     }
-};
+}
 
 function CParam(dim, qual, suffix, mode) {
     this.dim = dim;
@@ -900,7 +958,7 @@ LogItem.prototype = {
         if (pos >= 0)
             name = name.substring(0, pos);
 
-        return String.format('[[$ReportPhoto? &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
+        return String.format('[[$ReportPhoto? &elemId=`f` &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
     }
 };
 
