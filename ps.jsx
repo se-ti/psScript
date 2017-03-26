@@ -966,7 +966,7 @@ LogItem.prototype = {
         if (pos >= 0)
             name = name.substring(0, pos);
 
-        return String.format('[[$ReportPhoto? &elemId=`f` &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
+        return String.format('[[$ReportPhoto? &tagId=`f` &id=`{0}` &text=`{1}`]]', name, String.toHTML(this.alt));
     }
 };
 
