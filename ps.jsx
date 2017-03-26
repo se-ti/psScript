@@ -14,13 +14,14 @@
 $.localize = true; // автолокализация
 
 /* todo
-* проверять наличие файлика с описаниями
 * высота больших? -- дать выбирать тип преобразования
 * +- ввод путей руками
 * output folder
 * --+ переделать layout на xml
 * -+ запоминать настройки с прошлого запуска?  какие именно? try $.setenv / $.getenv   -- пока работает только пока не перезапустишь фотошоп
+* дизейблить подписи контролов
 
+* +- проверять наличие файлика с описаниями -- не надо ли ругаться, если что-то не так?
 * ++ галочка "верстка под вестру"?
 * ++ галочку для отключения ресайза и добавления текста
 * ++ автоматически подтягивать единственный txt файл в папке
@@ -43,8 +44,7 @@ function $cd(ctx, func) {
 }
 
 if (String.prototype.trim == null)
-    String.prototype.trim = function() 
-    {
+    String.prototype.trim = function() {
         return this.replace(/^\s*/, '').replace(/\s*$/, '');
     }
 
@@ -64,8 +64,7 @@ String._htmlSubstitutes = [{r:/&/gi, t:'&amp;'},
     {r:/'/gi, t:'&apos;'},
     {r:/"/gi, t:'&quot;'}];
 
-String.toHTML = function(str)
-{
+String.toHTML = function(str) {
     if (!str || ! str instanceof String)
         return '';
 
@@ -160,8 +159,7 @@ CDialog.prototype = {
         var res = [];
         var files = this.srcFolder.getFiles();
         for (var i = 0; i < files.length; i++)
-            if (files[i] instanceof File)
-            {
+            if (files[i] instanceof File) {
                 var dn = files[i].displayName;
                 var ext = dn.slice(dn.lastIndexOf('.')).toLowerCase();
                 if (dn == "descript.ion" || ext == '.txt')
@@ -170,12 +168,26 @@ CDialog.prototype = {
 
         if (res.length == 1) {
             this.dlg.desc.text = res[0];
-            this._canAddText();
+            this._onDescChanged();
         }
     },
 
+    _onDescChanged: function() {
+        var desc = this.dlg.desc;
+        desc.___valid = false;
+
+        if  ((desc.text || '') != '' && this.srcFolder && this.srcFolder instanceof Folder) {
+            var f = File(this.srcFolder.fullName + '/' + desc.text);
+            if (f != null && f instanceof File && f.exists)
+                desc.___valid = true;
+        }
+
+        this._canAddText();
+    },
+
     _canAddText: function() {
-        this.main.canAddText((this.dlg.desc.text || '') != '');
+        var desc = this.dlg.desc;
+        this.main.canAddText((desc.text || '') != '' && desc.___valid);
     },
 
     _canStart: function() {
@@ -307,7 +319,7 @@ CDialog.prototype = {
             'desc: EditText {characters: 15, text: "photo.txt"} ' +
             '}';
         dlg.desc = dlg.ctrlPnl.add(rs).desc;
-        dlg.desc.onChange = $cd(this, this._canAddText);
+        dlg.desc.onChange = $cd(this, this._onDescChanged);
 
         // dst folder
 
@@ -328,12 +340,12 @@ CDialog.prototype = {
             '}';
         var r = dlg.add(rs);
 
-        rs = 'Checkbox { align: "left", value:"true", text: "' + localize({en: 'Generate main', ru: 'Создать основные'}) + '"}';
+        rs = localize('Checkbox { align: "left", value: true, text: "%1"}', {en: 'Generate main', ru: 'Создать основные'});
         dlg.main = r.col1.add(rs);
         dlg.main.onClick = $cd(this, this._onMainChange);
         this.main = new CParamControl(r.col1, true);
 
-        rs = 'Checkbox { align: "left", value:"false", text: "' + localize({en: 'Generate preview', ru: 'Создать превью'}) + '"}';
+        rs = localize('Checkbox { align: "left", value: false, text: "%1"}', {en: 'Generate preview', ru: 'Создать превью'});
         dlg.preview = r.col2.add(rs);
         dlg.preview.onClick = $cd(this, this._onPreviewChange);
         this.preview = new CParamControl(r.col2, false);
@@ -445,7 +457,7 @@ CParamControl.prototype = {
 		}
 
 		var cap = this._full ? {en: 'Quality:', ru: 'Качество:'} : {en: 'JPEG quality:', ru: 'Качество:'};
-        c.qual = this._addQualControl(c.panel, cap, this._full ? '100' : '75');
+        c.qual = this._addQualControl(c.panel, cap, this._full ? '99' : '75');
 		
 		if (!this._full)
 			return;
