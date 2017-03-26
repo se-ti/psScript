@@ -175,7 +175,7 @@ CDialog.prototype = {
     },
 
     _canAddText: function() {
-        this.main.canAddText((this.dlg.desc.text||'') != '');
+        this.main.canAddText((this.dlg.desc.text || '') != '');
     },
 
     _canStart: function() {
@@ -302,13 +302,11 @@ CDialog.prototype = {
         dlg.recursive = dlg.ctrlPnl.add('checkbox', undefined, {en: 'Include all subfolders', ru: 'Включая все подпапки'});
         dlg.recursive.value = false;
 
-        dlg.trow1 = dlg.ctrlPnl.add('group');
-        var st = dlg.trow1.add('StaticText', undefined, {en: 'Descriptions:', ru: 'Описания:'});
-        st.justify = "right";
-        st.size = [92, 14];
-
-        dlg.desc = dlg.trow1.add('EditText', undefined, 'photo.txt');
-        dlg.desc.characters = 15;
+        var rs = 'Group { ' +
+            'st: StaticText { justify: "right", size: [92, 14], text: "' + localize ({en: 'Descriptions:', ru: 'Описания:'}) + '"}, ' +     // !!! magic constant
+            'desc: EditText {characters: 15, text: "photo.txt"} ' +
+            '}';
+        dlg.desc = dlg.ctrlPnl.add(rs).desc;
         dlg.desc.onChange = $cd(this, this._canAddText);
 
         // dst folder
@@ -328,7 +326,7 @@ CDialog.prototype = {
                 'col1: Group {orientation: "column", alignChildren: "left", align: "left"},' +
                 'col2: Group {orientation: "column", alignChildren: "left", align: "right"}' +
             '}';
-        var r =  dlg.add(rs);
+        var r = dlg.add(rs);
 
         rs = 'Checkbox { align: "left", value:"true", text: "' + localize({en: 'Generate main', ru: 'Создать основные'}) + '"}';
         dlg.main = r.col1.add(rs);
@@ -349,10 +347,7 @@ CDialog.prototype = {
         dlg.logpath.characters = 50;
         dlg.log.onClick = $cd(this, this.chooseFile);
 		
-		dlg.useWestra = dlg.add('checkbox', undefined, {en: 'Add westra markup', ru: 'Разметка для Вестры'});
-        dlg.useWestra.value = false;
-        dlg.useWestra.enabled = false;
-		
+		dlg.useWestra = dlg.add(localize('Checkbox {value: false, enabled: false, text: "%1"}', {en: 'Add westra markup', ru: 'Разметка для Вестры'}));
 
         dlg.btnPnl = dlg.add('group');
         dlg.btnPnl.alignment = 'center';
@@ -369,6 +364,7 @@ CDialog.prototype = {
         this._onMainChange();
         this._onPreviewChange();
 
+        this._guessDescription();
         this._canAddText();
         this._canStart();
         return dlg;
@@ -565,7 +561,7 @@ CParamControl.prototype = {
     },
 
     _addQualControl:function (parent, caption, defVal) {
-        var rs = 'group {st: StaticText {text: "' + caption + '", justify: "right", size: [92, 14] },' +
+        var rs = 'group {st: StaticText {text: "' + caption + '", justify: "right", size: [92, 14] },' +            // !!! magic constant
             'ed: EditText { characters: 6, minvalue: 1, maxvalue: 100, text: "'+ defVal +'"}' +
             '}';
 
