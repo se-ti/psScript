@@ -893,8 +893,7 @@ function LogItem(src, error) {
 
 LogItem.prototype = {
 
-    addMain: function(src, alt)
-    {
+    addMain: function(src, alt) {
         this.src = src || '';
         this.alt = (alt || '').trim();
 
@@ -906,20 +905,17 @@ LogItem.prototype = {
         this.text = this.alt.substr(this.altTitle.length).trim();
     },
 
-    addPreview: function(src, width, height)
-    {
+    addPreview: function(src, width, height) {
         this.preview = src || '';
         this.width = width;
         this.height = height;
     },
 
-    _relativePath: function(path, logPath, logPathLen)
-    {
+    _relativePath: function(path, logPath, logPathLen) {
         return path.toLowerCase().indexOf(logPath.toLowerCase()) == 0 ? ('./' + path.substring(logPathLen+1)).replace(/\\/gi, '/') : path;
     },
 
-    toHTML: function(logPath, pathLen)
-    {
+    toHTML: function(logPath, pathLen) {
         var res = '';
         var head = '';
         var tail = '';
@@ -927,14 +923,12 @@ LogItem.prototype = {
         if (this.error != '')
             return 'Error: ' + this.error + ' ' + (this.src ||'');
 
-        if (this.src != '')
-        {
+        if (this.src != '') {
             head = '<a href="' + this._relativePath(this.src, logPath, pathLen) +  '" target="_blank">';
             tail = '</a>';
         }
 
-        if (this.preview != '')
-        {
+        if (this.preview != '') {
             res = '<img src="' + this._relativePath(this.preview, logPath, pathLen) + '" width="' + this.width + '" height="' + this.height + '"';
             if (this.text != '')
                 res += ' alt="' + String.toHTML(this.text) + '"';
@@ -947,21 +941,19 @@ LogItem.prototype = {
         return '<table class="img" style="margin: auto;"><tbody>\n\t<tr><td>\n\t\t\t' + head + res + tail + alt + '\n\t</td></tr>\n</tbody></table>';
     },
 
-    imageListItem: function(logPath, pathLen)
-    {
+    imageListItem: function(logPath, pathLen) {
         if (this.alt == '' || this.src == '')
             return null;
 
         return String.format('{0} <a href="{1}" target="_blank">{2}</a>', String.toHTML(this.altTitle), this._relativePath(this.src, logPath, pathLen), String.toHTML(this.text));
     },
 
-    purikovItem: function()
-    {
+    purikovItem: function() {
         if (this.src == '')
             return '';
 
         var pos = this.src.lastIndexOf('\\');
-        var name = pos >= 0 ? this.src.substring(pos+1) : this.src;
+        var name = pos >= 0 ? this.src.substring(pos + 1) : this.src;
         pos = name.lastIndexOf('.');
         if (pos >= 0)
             name = name.substring(0, pos);
